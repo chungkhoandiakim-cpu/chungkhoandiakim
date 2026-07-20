@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // --- DÁN 2 GIÁ TRỊ NÀY SAU KHI TẠO PROJECT SUPABASE ---
 // Vào Project Settings > API để lấy 2 giá trị này
-const SUPABASE_URL = 'https://ethdiikzlwfrvuetwxar.supabase.co/rest/v1/';
+const SUPABASE_URL = 'https://ethdiikzlwfrvuetwxar.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_pSFf3cne98bxhsgo76kjfA_Tc5FLqkB';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
