@@ -20,11 +20,13 @@ const K = {
   watchlist: "ts:watchlist",
   plan: "ts:plan",
   journal: "ts:journal",
+  journalGold: "ts:journal-gold",
   psych: "ts:psychology",
   market: "ts:market-journal",
   stockLogs: "ts:stock-logs",
   profile: "ts:profile",
   screener: "ts:screener",
+  goldCapital: "ts:gold-capital",
 };
 
 async function loadKey(key, fallback) {
@@ -133,10 +135,11 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const [stockLogs, setStockLogs] = useState({});
   const [profile, setProfile] = useState({ name: "", title: "Môi giới chứng khoán", phone: "", zalo: "", facebook: "", telegram: "", email: "", youtube: "", tiktok: "" });
   const [screener, setScreener] = useState([]);
+  const [journalGold, setJournalGold] = useState([]);
 
   useEffect(() => {
     (async () => {
-      const [w, p, j, ps, mk, sl, pf, sc] = await Promise.all([
+      const [w, p, j, ps, mk, sl, pf, sc, jg] = await Promise.all([
         loadKey(K.watchlist, []),
         loadKey(K.plan, { goal: "", capital: "", allocations: [], rules: [] }),
         loadKey(K.journal, []),
@@ -145,6 +148,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         loadKey(K.stockLogs, {}),
         loadKey(K.profile, { name: "", title: "Môi giới chứng khoán", phone: "", zalo: "", facebook: "", telegram: "", email: "", youtube: "", tiktok: "" }),
         loadKey(K.screener, []),
+        loadKey(K.journalGold, []),
       ]);
       let mergedMarket = mk;
       if (ps && Object.keys(ps).length > 0) {
@@ -165,7 +169,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         saveKey(K.market, mergedMarket);
         saveKey(K.psych, {});
       }
-      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc);
+      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc); setJournalGold(jg);
       setLoading(false);
     })();
   }, []);
@@ -186,6 +190,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const setStockLogsP = persist(K.stockLogs, setStockLogs);
   const setProfileP = persist(K.profile, setProfile);
   const setScreenerP = persist(K.screener, setScreener);
+  const setJournalGoldP = persist(K.journalGold, setJournalGold);
 
   const stats = useMemo(() => {
     const closed = journal.filter((t) => t.pl !== "" && t.pl !== undefined && t.pl !== null && !isNaN(t.pl));
@@ -322,7 +327,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
           {tab === "dashboard" && <Dashboard stats={stats} journal={journal} market={market} watchlist={watchlist} profile={profile} setProfile={setProfileP} />}
           {tab === "watchlist" && <Watchlist watchlist={watchlist} setWatchlist={setWatchlistP} stockLogs={stockLogs} setStockLogs={setStockLogsP} />}
           {tab === "plan" && <PlanView plan={plan} setPlan={setPlanP} />}
-          {tab === "journal" && <Journal journal={journal} setJournal={setJournalP} />}
+          {tab === "journal" && <Journal journal={journal} setJournal={setJournalP} journalGold={journalGold} setJournalGold={setJournalGoldP} />}
           {tab === "market" && <MarketJournal market={market} setMarket={setMarketP} />}
           {tab === "method" && <MethodScreener screener={screener} setScreener={setScreenerP} />}
         </main>
@@ -1014,7 +1019,36 @@ function PlanView({ plan, setPlan }) {
 /* ---------------------------------------------------------
    JOURNAL
 --------------------------------------------------------- */
-function Journal({ journal, setJournal }) {
+function Journal({ journal, setJournal, journalGold, setJournalGold }) {
+  const [subTab, setSubTab] = useState("stock"); // "stock" | "gold"
+  return (
+    <div>
+      <PageHeader title="Nhật ký giao dịch" sub="Ghi lại từng lệnh — lý do vào lệnh, cảm xúc và ảnh chụp biểu đồ." />
+      <div className="px-6 md:px-10">
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setSubTab("stock")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "stock" ? { background: "linear-gradient(90deg,#7c3aed,#a855f7)", color: "#fff" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <BookOpen size={15} /> Chứng khoán
+          </button>
+          <button
+            onClick={() => setSubTab("gold")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "gold" ? { background: "linear-gradient(90deg,#7c3aed,#a855f7)", color: "#fff" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <Compass size={15} /> Vàng · Dầu · BTC (SMC)
+          </button>
+        </div>
+        {subTab === "stock" && <StockJournal journal={journal} setJournal={setJournal} />}
+        {subTab === "gold" && <GoldOilBtcJournal journal={journalGold} setJournal={setJournalGold} />}
+      </div>
+    </div>
+  );
+}
+
+function StockJournal({ journal, setJournal }) {
   const empty = { ticker: "", date: todayISO(), side: "Mua", price: "", qty: "", reason: "", emotion: "Bình tĩnh", pl: "", image: null };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
@@ -1058,51 +1092,215 @@ function Journal({ journal, setJournal }) {
 
   return (
     <div>
-      <PageHeader title="Nhật ký giao dịch" sub="Ghi lại từng lệnh — lý do vào lệnh, cảm xúc và ảnh chụp biểu đồ." />
-      <div className="px-6 md:px-10">
-        <Card className="p-4 mb-6">
-          {editingId && (
-            <div className="text-xs text-amber-400 mb-3 flex items-center gap-2">
-              <Pencil size={12} /> Đang chỉnh sửa {form.ticker || "lệnh"} — <button onClick={cancelEdit} className="underline text-slate-500">hủy</button>
+      <Card className="p-4 mb-6">
+        {editingId && (
+          <div className="text-xs text-amber-400 mb-3 flex items-center gap-2">
+            <Pencil size={12} /> Đang chỉnh sửa {form.ticker || "lệnh"} — <button onClick={cancelEdit} className="underline text-slate-500">hủy</button>
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <Input placeholder="Mã CK" value={form.ticker} onChange={(e) => setForm({ ...form, ticker: e.target.value })} />
+          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+          <select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
+            <option>Mua</option><option>Bán</option>
+          </select>
+          <select value={form.emotion} onChange={(e) => setForm({ ...form, emotion: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
+            {emotions.map((e) => <option key={e}>{e}</option>)}
+          </select>
+          <Input placeholder="Giá" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+          <Input placeholder="Khối lượng (cp)" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+          <Input placeholder="Lãi/Lỗ (VNĐ, nếu đã chốt)" value={form.pl} onChange={(e) => setForm({ ...form, pl: e.target.value })} />
+          <label className="flex items-center justify-center gap-1.5 text-xs rounded-md cursor-pointer" style={{ ...inputStyle, padding: "8px" }}>
+            <Upload size={13} /> {busy ? "Đang tải..." : form.image ? "Đã chọn ảnh" : "Tải ảnh biểu đồ"}
+            <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
+          </label>
+        </div>
+        <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+        <div className="flex items-center justify-between mt-3">
+          {form.image ? (
+            <div className="flex items-center gap-2">
+              <img src={form.image} alt="preview" className="h-12 rounded border border-slate-700" />
+              <button onClick={() => setForm({ ...form, image: null })} className="text-xs text-slate-500 hover:text-red-400">Xóa ảnh</button>
             </div>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-            <Input placeholder="Mã CK" value={form.ticker} onChange={(e) => setForm({ ...form, ticker: e.target.value })} />
-            <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            <select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
-              <option>Mua</option><option>Bán</option>
-            </select>
-            <select value={form.emotion} onChange={(e) => setForm({ ...form, emotion: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
-              {emotions.map((e) => <option key={e}>{e}</option>)}
-            </select>
-            <Input placeholder="Giá" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
-            <Input placeholder="Khối lượng (cp)" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
-            <Input placeholder="Lãi/Lỗ (VNĐ, nếu đã chốt)" value={form.pl} onChange={(e) => setForm({ ...form, pl: e.target.value })} />
-            <label className="flex items-center justify-center gap-1.5 text-xs rounded-md cursor-pointer" style={{ ...inputStyle, padding: "8px" }}>
-              <Upload size={13} /> {busy ? "Đang tải..." : form.image ? "Đã chọn ảnh" : "Tải ảnh biểu đồ"}
-              <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
-            </label>
-          </div>
-          <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
-          <div className="flex items-center justify-between mt-3">
-            {form.image ? (
-              <div className="flex items-center gap-2">
-                <img src={form.image} alt="preview" className="h-12 rounded border border-slate-700" />
-                <button onClick={() => setForm({ ...form, image: null })} className="text-xs text-slate-500 hover:text-red-400">Xóa ảnh</button>
-              </div>
-            ) : <span />}
-            <Btn onClick={save}>{editingId ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Ghi giao dịch</>}</Btn>
-          </div>
-        </Card>
+          ) : <span />}
+          <Btn onClick={save}>{editingId ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Ghi giao dịch</>}</Btn>
+        </div>
+      </Card>
 
-        {journal.length === 0 ? (
-          <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh đầu tiên ở trên." /></Card>
-        ) : (
-          <div className="space-y-3">
-            {journal.map((j) => (
+      {journal.length === 0 ? (
+        <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh đầu tiên ở trên." /></Card>
+      ) : (
+        <div className="space-y-3">
+          {journal.map((j) => (
+            <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
+              {j.image ? (
+                <img src={j.image} alt={j.ticker} className="w-full md:w-32 h-24 object-cover rounded border border-slate-700 flex-shrink-0" />
+              ) : (
+                <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
+                  <ImageOff size={16} className="text-slate-700" />
+                </div>
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="font-data font-bold text-amber-400">{j.ticker}</span>
+                  <span className="text-xs text-slate-600">{j.date}</span>
+                  <span className="text-xs font-data" style={{ color: j.side === "Mua" ? "#34d399" : "#f87171" }}>{j.side}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
+                  {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmtBillion(j.pl)}</span>}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Giá {fmt(j.price)} · KL {fmtVol(j.qty)}</div>
+                {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
+              </div>
+              <div className="flex gap-3 self-start">
+                <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
+                <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const GOLD_SYMBOLS = ["XAUUSD (Vàng)", "Dầu WTI", "Dầu Brent", "BTC/USDT", "ETH/USDT", "Khác"];
+const GOLD_EMOTIONS = ["Bình tĩnh", "Tự tin", "Sợ hãi", "Tham lam", "FOMO", "Do dự"];
+
+function GoldOilBtcJournal({ journal, setJournal }) {
+  const empty = {
+    symbol: "XAUUSD (Vàng)", customSymbol: "", date: todayISO(), direction: "Long",
+    entry: "", sl: "", tp: "", lot: "",
+    smc: { structure: false, liquidity: false, entry: false },
+    emotion: "Bình tĩnh", reason: "", pl: "", image: null,
+  };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const rr = computeRR(form);
+
+  async function handleImage(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      const dataUrl = await compressImage(file);
+      setForm((f) => ({ ...f, image: dataUrl }));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function save() {
+    const symbolLabel = form.symbol === "Khác" ? form.customSymbol.trim().toUpperCase() : form.symbol;
+    if (!symbolLabel) return;
+    const entry = { ...form, symbolLabel };
+    if (editingId) {
+      setJournal((prev) => prev.map((j) => (j.id === editingId ? { ...entry, id: editingId } : j)));
+    } else {
+      setJournal((prev) => [{ id: Date.now(), ...entry }, ...prev]);
+    }
+    cancelEdit();
+  }
+  function startEdit(j) {
+    setEditingId(j.id);
+    setForm({ ...empty, ...j });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(empty);
+  }
+  function remove(id) {
+    setJournal((prev) => prev.filter((j) => j.id !== id));
+    if (editingId === id) cancelEdit();
+  }
+  function toggleSmc(id) {
+    setForm((f) => ({ ...f, smc: { ...f.smc, [id]: !f.smc[id] } }));
+  }
+
+  const smcCount = Object.values(form.smc).filter(Boolean).length;
+
+  return (
+    <div>
+      <Card className="p-4 mb-6">
+        {editingId && (
+          <div className="text-xs text-amber-400 mb-3 flex items-center gap-2">
+            <Pencil size={12} /> Đang chỉnh sửa lệnh — <button onClick={cancelEdit} className="underline text-slate-500">hủy</button>
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <select value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
+            {GOLD_SYMBOLS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          {form.symbol === "Khác" && (
+            <Input placeholder="Nhập tên cặp/mã" value={form.customSymbol} onChange={(e) => setForm({ ...form, customSymbol: e.target.value })} />
+          )}
+          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+          <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "#263042" }}>
+            <button onClick={() => setForm({ ...form, direction: "Long" })} className="flex-1 text-sm font-medium py-2 flex items-center justify-center gap-1" style={{ background: form.direction === "Long" ? "#34d39922" : "transparent", color: form.direction === "Long" ? "#34d399" : "#64748b" }}>
+              <TrendingUp size={14} /> Long
+            </button>
+            <button onClick={() => setForm({ ...form, direction: "Short" })} className="flex-1 text-sm font-medium py-2 flex items-center justify-center gap-1" style={{ background: form.direction === "Short" ? "#f8717122" : "transparent", color: form.direction === "Short" ? "#f87171" : "#64748b" }}>
+              <TrendingDown size={14} /> Short
+            </button>
+          </div>
+          <select value={form.emotion} onChange={(e) => setForm({ ...form, emotion: e.target.value })} style={inputStyle} className="w-full px-3 py-2 rounded-md text-sm outline-none">
+            {GOLD_EMOTIONS.map((e) => <option key={e}>{e}</option>)}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-1">
+          <Input placeholder="Entry" value={form.entry} onChange={(e) => setForm({ ...form, entry: e.target.value })} />
+          <Input placeholder="Stop Loss" value={form.sl} onChange={(e) => setForm({ ...form, sl: e.target.value })} />
+          <Input placeholder="Take Profit" value={form.tp} onChange={(e) => setForm({ ...form, tp: e.target.value })} />
+          <Input placeholder="Khối lượng (lot)" value={form.lot} onChange={(e) => setForm({ ...form, lot: e.target.value })} />
+          <Input placeholder="Lãi/Lỗ (nếu đã chốt)" value={form.pl} onChange={(e) => setForm({ ...form, pl: e.target.value })} />
+        </div>
+        {rr !== null && (
+          <div className="mb-3">
+            <span className="text-xs font-data px-2 py-1 rounded-full" style={{ background: rr >= 2 ? "#34d39922" : "#f8717122", color: rr >= 2 ? "#34d399" : "#f87171" }}>R:R = 1:{rr}</span>
+          </div>
+        )}
+
+        <div className="mb-3">
+          <div className="text-xs text-slate-500 mb-2 flex items-center justify-between">
+            <span>Xác nhận theo phương pháp SMC</span>
+            <span className="font-data" style={{ color: smcCount === 3 ? "#34d399" : "#64748b" }}>{smcCount}/3</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <StepToggle title="Cấu trúc đúng chiều" checked={form.smc.structure} onToggle={() => toggleSmc("structure")} size="small" />
+            <StepToggle title="Đã quét thanh khoản" checked={form.smc.liquidity} onToggle={() => toggleSmc("liquidity")} size="small" />
+            <StepToggle title="Có điểm vào OB/FVG" checked={form.smc.entry} onToggle={() => toggleSmc("entry")} size="small" />
+          </div>
+        </div>
+
+        <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm SMC..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+        <div className="flex items-center justify-between mt-3">
+          <label className="flex items-center gap-1.5 text-xs rounded-md cursor-pointer px-3 py-2" style={inputStyle}>
+            <Upload size={13} /> {busy ? "Đang tải..." : form.image ? "Đã chọn ảnh" : "Tải ảnh biểu đồ"}
+            <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
+          </label>
+          <Btn onClick={save}>{editingId ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Ghi giao dịch</>}</Btn>
+        </div>
+        {form.image && (
+          <div className="mt-3 flex items-center gap-2">
+            <img src={form.image} alt="preview" className="h-12 rounded border border-slate-700" />
+            <button onClick={() => setForm({ ...form, image: null })} className="text-xs text-slate-500 hover:text-red-400">Xóa ảnh</button>
+          </div>
+        )}
+      </Card>
+
+      {journal.length === 0 ? (
+        <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh Vàng/Dầu/BTC đầu tiên theo phương pháp SMC ở trên." /></Card>
+      ) : (
+        <div className="space-y-3">
+          {journal.map((j) => {
+            const jrr = computeRR(j);
+            const smcOk = j.smc ? Object.values(j.smc).filter(Boolean).length : 0;
+            return (
               <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
                 {j.image ? (
-                  <img src={j.image} alt={j.ticker} className="w-full md:w-32 h-24 object-cover rounded border border-slate-700 flex-shrink-0" />
+                  <img src={j.image} alt={j.symbolLabel} className="w-full md:w-32 h-24 object-cover rounded border border-slate-700 flex-shrink-0" />
                 ) : (
                   <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
                     <ImageOff size={16} className="text-slate-700" />
@@ -1110,13 +1308,15 @@ function Journal({ journal, setJournal }) {
                 )}
                 <div className="flex-1">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-data font-bold text-amber-400">{j.ticker}</span>
+                    <span className="font-data font-bold text-amber-400">{j.symbolLabel}</span>
                     <span className="text-xs text-slate-600">{j.date}</span>
-                    <span className="text-xs font-data" style={{ color: j.side === "Mua" ? "#34d399" : "#f87171" }}>{j.side}</span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: j.direction === "Short" ? "#f8717122" : "#34d39922", color: j.direction === "Short" ? "#f87171" : "#34d399" }}>{j.direction}</span>
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
-                    {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmtBillion(j.pl)}</span>}
+                    <span className="text-[11px] font-data text-slate-500">SMC {smcOk}/3</span>
+                    {jrr !== null && <span className="text-xs font-data" style={{ color: jrr >= 2 ? "#34d399" : "#f87171" }}>R:R 1:{jrr}</span>}
+                    {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmt(j.pl)}</span>}
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">Giá {fmt(j.price)} · KL {fmtVol(j.qty)}</div>
+                  <div className="text-xs text-slate-500 mt-1">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
                   {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
                 </div>
                 <div className="flex gap-3 self-start">
@@ -1124,10 +1324,10 @@ function Journal({ journal, setJournal }) {
                   <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
                 </div>
               </Card>
-            ))}
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
