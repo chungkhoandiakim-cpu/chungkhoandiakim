@@ -422,6 +422,39 @@ function Btn({ children, onClick, variant = "primary", className = "", type = "b
   );
 }
 
+function computePortfolioRisk(journalGold) {
+  const open = journalGold.filter((j) => j.status === "Đang mở");
+  if (open.length === 0) return null;
+
+  const warnings = [];
+  const longCount = open.filter((j) => j.direction === "Long").length;
+  const shortCount = open.filter((j) => j.direction === "Short").length;
+
+  if (longCount >= 3) warnings.push(`Đang mở ${longCount} lệnh Long cùng lúc — rủi ro dồn về 1 chiều nếu thị trường đảo ngược.`);
+  if (shortCount >= 3) warnings.push(`Đang mở ${shortCount} lệnh Short cùng lúc — rủi ro dồn về 1 chiều nếu thị trường đảo ngược.`);
+
+  const bySymbol = {};
+  open.forEach((j) => { bySymbol[j.symbolLabel] = (bySymbol[j.symbolLabel] || 0) + 1; });
+  Object.entries(bySymbol).forEach(([sym, count]) => {
+    if (count >= 2) warnings.push(`${sym} đang có ${count} lệnh mở cùng lúc — trùng mã, rủi ro cộng dồn thay vì đa dạng hoá.`);
+  });
+
+  const usdExposure = { long: 0, short: 0 };
+  open.forEach((j) => {
+    const sym = j.symbolLabel || "";
+    if (!sym.includes("USD")) return;
+    const usdIsBase = sym.startsWith("USD");
+    const isLongUSD = usdIsBase ? j.direction === "Long" : j.direction === "Short";
+    if (isLongUSD) usdExposure.long += 1; else usdExposure.short += 1;
+  });
+  if (usdExposure.long >= 3) warnings.push(`Danh mục đang thiên về Long USD ở ${usdExposure.long} lệnh liên quan — các cặp có USD dễ biến động cùng chiều với nhau.`);
+  if (usdExposure.short >= 3) warnings.push(`Danh mục đang thiên về Short USD ở ${usdExposure.short} lệnh liên quan — các cặp có USD dễ biến động cùng chiều với nhau.`);
+
+  const totalRiskPct = open.reduce((s, j) => s + (Number(j.riskPercent) || 0), 0);
+
+  return { open, warnings, totalRiskPct, longCount, shortCount };
+}
+
 /* ---------------------------------------------------------
    DASHBOARD
 --------------------------------------------------------- */
@@ -434,6 +467,7 @@ function Dashboard({ stats, journal, journalGold, market, watchlist, profile, se
       if (triggered) activeAlerts.push({ ticker: w.ticker, condition: a.condition, price: a.price, current: w.price });
     });
   });
+  const portfolioRisk = computePortfolioRisk(journalGold);
 
   function exportExcel() {
     const wb = XLSX.utils.book_new();
@@ -522,6 +556,24 @@ function Dashboard({ stats, journal, journalGold, market, watchlist, profile, se
                 </span>
               ))}
             </div>
+          </Card>
+        </div>
+      )}
+
+      {portfolioRisk && portfolioRisk.warnings.length > 0 && (
+        <div className="px-6 md:px-10 mb-8">
+          <Card className="p-4" style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)" }}>
+            <div className="text-sm font-semibold text-red-400 mb-2 flex items-center gap-2"><AlertTriangle size={15} /> Rủi ro danh mục tổng ({portfolioRisk.open.length} lệnh đang mở)</div>
+            <div className="space-y-1.5">
+              {portfolioRisk.warnings.map((w, i) => (
+                <div key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                  <span className="text-red-400 mt-0.5 flex-shrink-0">•</span> {w}
+                </div>
+              ))}
+            </div>
+            {portfolioRisk.totalRiskPct > 0 && (
+              <div className="text-[11px] text-slate-500 mt-2">Tổng rủi ro dự kiến của các lệnh đang mở: <span className="font-data text-slate-300">{portfolioRisk.totalRiskPct}%</span> tài khoản.</div>
+            )}
           </Card>
         </div>
       )}
@@ -1256,7 +1308,7 @@ function Journal({ journal, setJournal, journalGold, setJournalGold, goldCapital
 }
 
 function StockJournal({ journal, setJournal }) {
-  const empty = { ticker: "", date: todayISO(), side: "Mua", price: "", qty: "", reason: "", emotion: "Bình tĩnh", pl: "", image: null };
+  const empty = { ticker: "", date: todayISO(), side: "Mua", price: "", qty: "", reason: "", emotion: "Bình tĩnh", pl: "", lesson: "", image: null };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1284,7 +1336,7 @@ function StockJournal({ journal, setJournal }) {
   }
   function startEdit(j) {
     setEditingId(j.id);
-    setForm({ ticker: j.ticker, date: j.date, side: j.side, price: j.price, qty: j.qty, reason: j.reason, emotion: j.emotion, pl: j.pl, image: j.image || null });
+    setForm({ ticker: j.ticker, date: j.date, side: j.side, price: j.price, qty: j.qty, reason: j.reason, emotion: j.emotion, pl: j.pl, lesson: j.lesson || "", image: j.image || null });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function cancelEdit() {
@@ -1324,6 +1376,16 @@ function StockJournal({ journal, setJournal }) {
           </label>
         </div>
         <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+        {form.pl !== "" && (
+          <Textarea
+            className="mt-2"
+            rows={2}
+            placeholder="Bài học rút ra từ lệnh này (đã làm đúng gì, lần sau nên khác gì)..."
+            value={form.lesson}
+            onChange={(e) => setForm({ ...form, lesson: e.target.value })}
+            style={{ borderColor: "#7c3aed55" }}
+          />
+        )}
         <div className="flex items-center justify-between mt-3">
           {form.image ? (
             <div className="flex items-center gap-2">
@@ -1363,6 +1425,11 @@ function StockJournal({ journal, setJournal }) {
                 </div>
                 <div className="text-xs text-slate-500 mt-1">Giá {fmt(j.price)} · KL {fmtVol(j.qty)}</div>
                 {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
+                {j.lesson && (
+                  <div className="text-xs text-purple-300 mt-1.5 px-2 py-1.5 rounded-md flex items-start gap-1.5" style={{ background: "rgba(168,85,247,0.08)" }}>
+                    <Sparkles size={12} className="mt-0.5 flex-shrink-0" /> {j.lesson}
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 self-start">
                 <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
@@ -1632,7 +1699,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
     smc: { structure: false, liquiditySource: false, divergence: false, obFvgHtf: false, waveBC: false, entryAtFoot: false },
     killzone: false, newsClear: false,
     status: "Đang mở", exitPrice: "",
-    emotion: "Bình tĩnh", reason: "", pl: "", images: [],
+    emotion: "Bình tĩnh", reason: "", pl: "", lesson: "", images: [],
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
@@ -1882,6 +1949,16 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
         </div>
 
         <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm SMC..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+        {form.status === "Đã đóng" && (
+          <Textarea
+            className="mt-2"
+            rows={2}
+            placeholder="Bài học rút ra từ lệnh này (đã làm đúng gì, lần sau nên khác gì)..."
+            value={form.lesson}
+            onChange={(e) => setForm({ ...form, lesson: e.target.value })}
+            style={{ borderColor: "#7c3aed55" }}
+          />
+        )}
 
         <div className="mt-3">
           <div className="text-xs text-slate-500 mb-2 flex items-center justify-between">
@@ -1993,6 +2070,11 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
                           </div>
                           <div className="text-xs text-slate-500 mb-2">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
                           {j.reason && <div className="text-sm text-slate-300 mb-3">{j.reason}</div>}
+                          {j.lesson && (
+                            <div className="text-xs text-purple-300 mb-3 px-2 py-1.5 rounded-md flex items-start gap-1.5" style={{ background: "rgba(168,85,247,0.08)" }}>
+                              <Sparkles size={12} className="mt-0.5 flex-shrink-0" /> {j.lesson}
+                            </div>
+                          )}
                           {jImages.length > 0 && (
                             <div className="flex gap-2 flex-wrap">
                               {jImages.map((img, idx) => (
@@ -3561,11 +3643,95 @@ function PerformanceGroup({ title, trades, moneyFmt }) {
   );
 }
 
+function getWeekStart(dateStr) {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  return monday.toISOString().slice(0, 10);
+}
+function getWeekLabel(weekStartStr) {
+  const start = new Date(weekStartStr);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const f = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `Tuần ${f(start)} - ${f(end)}`;
+}
+function computePeriodReport(trades, mode) {
+  const closed = trades.filter((t) => t.pl !== "" && t.pl !== undefined && t.pl !== null && !isNaN(Number(t.pl)) && t.date);
+  const groups = {};
+  closed.forEach((t) => {
+    const key = mode === "week" ? getWeekStart(t.date) : t.date.slice(0, 7);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  });
+  return Object.entries(groups)
+    .map(([key, list]) => {
+      const wins = list.filter((t) => Number(t.pl) > 0).length;
+      const totalPL = list.reduce((s, t) => s + Number(t.pl), 0);
+      const worst = list.reduce((a, b) => (Number(a.pl) < Number(b.pl) ? a : b));
+      return {
+        key,
+        label: mode === "week" ? getWeekLabel(key) : key,
+        count: list.length,
+        winRate: Math.round((wins / list.length) * 100),
+        totalPL,
+        worst,
+      };
+    })
+    .sort((a, b) => (a.key < b.key ? 1 : -1))
+    .slice(0, 8);
+}
+
+function PeriodicReport({ trades, moneyFmt, symbolKey, title }) {
+  const [mode, setMode] = useState("week");
+  const periods = useMemo(() => computePeriodReport(trades, mode), [trades, mode]);
+
+  return (
+    <Card className="p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm font-semibold text-amber-300 flex items-center gap-2"><CalendarDays size={15} /> Báo cáo định kỳ — {title}</div>
+        <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "#263042" }}>
+          <button onClick={() => setMode("week")} className="px-3 py-1.5 text-xs font-medium" style={{ background: mode === "week" ? "#7c3aed33" : "transparent", color: mode === "week" ? "#a855f7" : "#64748b" }}>Theo tuần</button>
+          <button onClick={() => setMode("month")} className="px-3 py-1.5 text-xs font-medium" style={{ background: mode === "month" ? "#7c3aed33" : "transparent", color: mode === "month" ? "#a855f7" : "#64748b" }}>Theo tháng</button>
+        </div>
+      </div>
+      {periods.length === 0 ? (
+        <EmptyHint text="Chưa có lệnh đã chốt nào trong giai đoạn này." />
+      ) : (
+        <div className="space-y-2">
+          {periods.map((p) => (
+            <div key={p.key} className="p-3 rounded-md" style={{ background: "#0a0e14", border: "1px solid #1c2432" }}>
+              <div className="flex flex-wrap items-center gap-3 mb-1.5">
+                <span className="text-sm font-medium text-slate-200">{p.label}</span>
+                <span className="text-xs text-slate-500">{p.count} lệnh</span>
+                <span className="text-xs font-data" style={{ color: p.winRate >= 50 ? "#34d399" : "#f87171" }}>{p.winRate}% thắng</span>
+                <span className="text-xs font-data font-semibold" style={{ color: p.totalPL >= 0 ? "#34d399" : "#f87171" }}>{p.totalPL >= 0 ? "+" : ""}{moneyFmt(p.totalPL)}</span>
+              </div>
+              <div className="text-xs text-slate-500">
+                Lệnh tệ nhất: <span className="font-data text-red-400">{p.worst[symbolKey]}</span> ({p.worst.date}) {moneyFmt(p.worst.pl)}
+                {p.worst.lesson ? (
+                  <span className="text-purple-300"> — Bài học: {p.worst.lesson}</span>
+                ) : (
+                  <span className="text-slate-600 italic"> — chưa ghi bài học cho lệnh này</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function PerformanceStats({ journal, journalGold }) {
   return (
     <div>
       <PageHeader title="Hiệu suất giao dịch" sub="Thống kê tỷ lệ thắng, lãi/lỗ và đường cong vốn — tách riêng Chứng khoán và Vàng/Dầu/BTC." />
       <div className="px-6 md:px-10">
+        <PeriodicReport trades={journal} moneyFmt={fmtBillion} symbolKey="ticker" title="Chứng khoán" />
+        <PeriodicReport trades={journalGold} moneyFmt={fmt} symbolKey="symbolLabel" title="Vàng · Dầu · BTC" />
         <PerformanceGroup title="Chứng khoán" trades={journal} moneyFmt={fmtBillion} />
         <PerformanceGroup title="Vàng · Dầu · BTC" trades={journalGold} moneyFmt={fmt} />
       </div>
@@ -3603,6 +3769,8 @@ function CRM({ crm, setCrm }) {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [expandedId, setExpandedId] = useState(null);
+  const [interactionDraft, setInteractionDraft] = useState({ date: todayISO(), note: "" });
 
   function save() {
     if (!form.name.trim()) return;
@@ -3627,6 +3795,21 @@ function CRM({ crm, setCrm }) {
   function remove(id) {
     setCrm((prev) => prev.filter((c) => c.id !== id));
     if (editingId === id) cancelEdit();
+  }
+  function addInteraction(customerId) {
+    if (!interactionDraft.note.trim()) return;
+    setCrm((prev) => prev.map((c) => {
+      if (c.id !== customerId) return c;
+      const interactions = [{ id: Date.now(), ...interactionDraft }, ...(c.interactions || [])];
+      return { ...c, interactions, lastContact: interactionDraft.date };
+    }));
+    setInteractionDraft({ date: todayISO(), note: "" });
+  }
+  function removeInteraction(customerId, interactionId) {
+    setCrm((prev) => prev.map((c) => {
+      if (c.id !== customerId) return c;
+      return { ...c, interactions: (c.interactions || []).filter((i) => i.id !== interactionId) };
+    }));
   }
 
   const stats = useMemo(() => {
@@ -3733,29 +3916,66 @@ function CRM({ crm, setCrm }) {
           <Card className="p-10"><EmptyHint text="Chưa có khách hàng nào khớp. Thêm khách hàng đầu tiên ở trên." /></Card>
         ) : (
           <div className="space-y-2">
-            {filtered.map((c) => (
-              <Card key={c.id} className="p-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
-                <div className="w-40 flex-shrink-0">
-                  <div className="font-semibold text-slate-100">{c.name}</div>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full inline-block mt-1" style={{ background: `${crmStatusColor(c.status)}22`, color: crmStatusColor(c.status) }}>{c.status}</span>
-                </div>
-                <div className="flex flex-wrap gap-4 text-xs text-slate-400 flex-1">
-                  {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-amber-400"><Phone size={12} /> {c.phone}</a>}
-                  {c.zalo && <span className="flex items-center gap-1"><MessageCircle size={12} /> {c.zalo}</span>}
-                  {c.aum && <span className="font-data text-slate-300">TS: {fmtBillion(c.aum)}</span>}
-                  {c.nextFollowUp && (
-                    <span className="flex items-center gap-1" style={{ color: isOverdue(c.nextFollowUp) ? "#f87171" : isDueToday(c.nextFollowUp) ? "#fbbf24" : "#64748b" }}>
-                      <Clock size={12} /> Hẹn: {c.nextFollowUp}
-                    </span>
+            {filtered.map((c) => {
+              const isOpen = expandedId === c.id;
+              const interactions = c.interactions || [];
+              return (
+                <Card key={c.id} className="overflow-hidden">
+                  <div className="p-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-6 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : c.id)}>
+                    <div className="w-40 flex-shrink-0">
+                      <div className="font-semibold text-slate-100">{c.name}</div>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full inline-block mt-1" style={{ background: `${crmStatusColor(c.status)}22`, color: crmStatusColor(c.status) }}>{c.status}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-xs text-slate-400 flex-1">
+                      {c.phone && <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 hover:text-amber-400"><Phone size={12} /> {c.phone}</a>}
+                      {c.zalo && <span className="flex items-center gap-1"><MessageCircle size={12} /> {c.zalo}</span>}
+                      {c.aum && <span className="font-data text-slate-300">TS: {fmtBillion(c.aum)}</span>}
+                      {c.nextFollowUp && (
+                        <span className="flex items-center gap-1" style={{ color: isOverdue(c.nextFollowUp) ? "#f87171" : isDueToday(c.nextFollowUp) ? "#fbbf24" : "#64748b" }}>
+                          <Clock size={12} /> Hẹn: {c.nextFollowUp}
+                        </span>
+                      )}
+                      {interactions.length > 0 && <span className="text-slate-600">{interactions.length} lần tương tác đã ghi</span>}
+                    </div>
+                    <div className="flex gap-3 self-start" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => startEdit(c)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
+                      <button onClick={() => remove(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
+                      <button onClick={() => setExpandedId(isOpen ? null : c.id)} className="text-slate-500 hover:text-purple-400">
+                        {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isOpen && (
+                    <div className="px-4 pb-4" style={{ borderTop: "1px solid #1c2432" }}>
+                      {c.note && <div className="text-xs text-slate-400 italic mt-3 mb-3">{c.note}</div>}
+
+                      <div className="text-xs text-slate-500 mb-2 font-medium flex items-center gap-1.5"><Clock size={13} /> Lịch sử tương tác</div>
+
+                      <div className="flex gap-2 mb-3">
+                        <Input type="date" value={interactionDraft.date} onChange={(e) => setInteractionDraft({ ...interactionDraft, date: e.target.value })} style={{ maxWidth: 150 }} />
+                        <Input placeholder="Nội dung trao đổi lần này..." value={interactionDraft.note} onChange={(e) => setInteractionDraft({ ...interactionDraft, note: e.target.value })} className="flex-1" />
+                        <Btn onClick={() => addInteraction(c.id)}><Plus size={14} /> Ghi lại</Btn>
+                      </div>
+
+                      {interactions.length === 0 ? (
+                        <div className="text-xs text-slate-600">Chưa có lần tương tác nào được ghi lại.</div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {[...interactions].sort((a, b) => (a.date < b.date ? 1 : -1)).map((it) => (
+                            <div key={it.id} className="flex items-start gap-3 text-xs px-3 py-2 rounded-md" style={{ background: "#0a0e14" }}>
+                              <span className="font-data text-slate-500 flex-shrink-0 w-20">{it.date}</span>
+                              <span className="text-slate-300 flex-1">{it.note}</span>
+                              <button onClick={() => removeInteraction(c.id, it.id)} className="text-slate-600 hover:text-red-400 flex-shrink-0"><Trash2 size={12} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
-                <div className="text-xs text-slate-500 italic flex-1 hidden lg:block truncate">{c.note}</div>
-                <div className="flex gap-3 self-start">
-                  <button onClick={() => startEdit(c)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
-                  <button onClick={() => remove(c.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
