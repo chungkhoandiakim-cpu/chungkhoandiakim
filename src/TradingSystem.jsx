@@ -142,7 +142,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const [screener, setScreener] = useState([]);
   const [journalGold, setJournalGold] = useState([]);
   const [journalForex, setJournalForex] = useState([]);
-  const [goldCapital, setGoldCapital] = useState({ initialCapital: "", riskPerTrade: "1", maxDailyLoss: "3", maxConsecutiveLoss: "3" });
+  const [goldCapital, setGoldCapital] = useState({ initialCapital: "", riskPerTrade: "1", maxDailyLoss: "3", maxConsecutiveLoss: "3", transactions: [] });
   const [crm, setCrm] = useState([]);
 
   useEffect(() => {
@@ -157,7 +157,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         loadKey(K.profile, { name: "", title: "Môi giới chứng khoán", phone: "", zalo: "", facebook: "", telegram: "", email: "", youtube: "", tiktok: "" }),
         loadKey(K.screener, []),
         loadKey(K.journalGold, []),
-        loadKey(K.goldCapital, { initialCapital: "", riskPerTrade: "1", maxDailyLoss: "3", maxConsecutiveLoss: "3" }),
+        loadKey(K.goldCapital, { initialCapital: "", riskPerTrade: "1", maxDailyLoss: "3", maxConsecutiveLoss: "3", transactions: [] }),
         loadKey(K.journalForex, []),
         loadKey(K.crm, []),
       ]);
@@ -1406,14 +1406,20 @@ function fmtUSD(n) {
 function GoldCapitalPanel({ capital, setCapital, journal }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(capital);
+  const [txForm, setTxForm] = useState({ date: todayISO(), type: "Rút", amount: "", note: "" });
+  const [showTxForm, setShowTxForm] = useState(false);
   const riskAmount = computeGoldRiskAmount(capital);
+
+  const transactions = capital.transactions || [];
+  const totalWithdrawn = transactions.filter((t) => t.type === "Rút").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalDeposited = transactions.filter((t) => t.type === "Nạp").reduce((s, t) => s + Number(t.amount || 0), 0);
 
   const closedPL = journal
     .filter((t) => t.pl !== "" && t.pl !== undefined && t.pl !== null && !isNaN(Number(t.pl)))
     .reduce((s, t) => s + Number(t.pl), 0);
   const initial = Number(capital.initialCapital);
   const hasCapital = capital.initialCapital && !isNaN(initial);
-  const currentCapital = hasCapital ? initial + closedPL : null;
+  const currentCapital = hasCapital ? initial + closedPL + totalDeposited - totalWithdrawn : null;
   const changePct = hasCapital && initial !== 0 ? Math.round((closedPL / initial) * 10000) / 100 : null;
 
   function startEdit() {
@@ -1421,8 +1427,17 @@ function GoldCapitalPanel({ capital, setCapital, journal }) {
     setEditing(true);
   }
   function save() {
-    setCapital(draft);
+    setCapital({ ...draft, transactions: capital.transactions || [] });
     setEditing(false);
+  }
+  function addTransaction() {
+    if (!txForm.amount || isNaN(Number(txForm.amount))) return;
+    const entry = { id: Date.now(), ...txForm };
+    setCapital({ ...capital, transactions: [entry, ...transactions] });
+    setTxForm({ date: todayISO(), type: "Rút", amount: "", note: "" });
+  }
+  function removeTransaction(id) {
+    setCapital({ ...capital, transactions: transactions.filter((t) => t.id !== id) });
   }
 
   if (editing) {
@@ -1451,28 +1466,31 @@ function GoldCapitalPanel({ capital, setCapital, journal }) {
       </div>
       {hasCapital ? (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4 pb-4" style={{ borderBottom: "1px solid #1c2432" }}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 pb-4" style={{ borderBottom: "1px solid #1c2432" }}>
             <div>
               <div className="text-[11px] text-slate-600">Vốn ban đầu</div>
               <div className="font-data font-semibold text-slate-200">{fmtUSD(capital.initialCapital)}</div>
             </div>
             <div>
-              <div className="text-[11px] text-slate-600">Vốn hiện tại</div>
-              <div className="font-data font-bold text-lg" style={{ color: closedPL >= 0 ? "#34d399" : "#f87171" }}>{fmtUSD(currentCapital)}</div>
+              <div className="text-[11px] text-slate-600">Vốn còn lại (đã trừ rút)</div>
+              <div className="font-data font-bold text-lg" style={{ color: currentCapital >= initial ? "#34d399" : "#f87171" }}>{fmtUSD(currentCapital)}</div>
             </div>
             <div>
-              <div className="text-[11px] text-slate-600">Tăng/Giảm</div>
+              <div className="text-[11px] text-slate-600">Lãi/Lỗ giao dịch</div>
               <div className="font-data font-semibold flex items-center gap-1" style={{ color: closedPL >= 0 ? "#34d399" : "#f87171" }}>
                 {closedPL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                 {closedPL >= 0 ? "+" : ""}{fmtUSD(closedPL)} ({changePct >= 0 ? "+" : ""}{changePct}%)
               </div>
             </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <div className="text-[11px] text-slate-600">Vốn ban đầu</div>
-              <div className="font-data font-semibold text-slate-200">{fmtUSD(capital.initialCapital)}</div>
+              <div className="text-[11px] text-slate-600">Đã rút / Đã nạp thêm</div>
+              <div className="font-data font-semibold">
+                <span style={{ color: "#f87171" }}>-{fmtUSD(totalWithdrawn)}</span>
+                {totalDeposited > 0 && <span style={{ color: "#34d399" }}> · +{fmtUSD(totalDeposited)}</span>}
+              </div>
             </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 pb-4" style={{ borderBottom: "1px solid #1c2432" }}>
             <div>
               <div className="text-[11px] text-slate-600">Rủi ro/lệnh</div>
               <div className="font-data font-semibold text-amber-400">{capital.riskPerTrade}% {riskAmount !== null && <span className="text-slate-500">(~{fmtUSD(riskAmount)})</span>}</div>
@@ -1486,6 +1504,38 @@ function GoldCapitalPanel({ capital, setCapital, journal }) {
               <div className="font-data font-semibold text-slate-200">{capital.maxConsecutiveLoss}</div>
             </div>
           </div>
+
+          <button onClick={() => setShowTxForm(!showTxForm)} className="text-xs text-purple-300 hover:text-purple-200 flex items-center gap-1.5 mb-3">
+            <Download size={13} style={{ transform: "rotate(90deg)" }} /> Nạp / Rút vốn {showTxForm ? "▲" : "▼"}
+          </button>
+
+          {showTxForm && (
+            <div className="mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "#263042" }}>
+                  <button onClick={() => setTxForm({ ...txForm, type: "Rút" })} className="flex-1 text-xs font-medium py-2" style={{ background: txForm.type === "Rút" ? "#f8717122" : "transparent", color: txForm.type === "Rút" ? "#f87171" : "#64748b" }}>Rút tiền</button>
+                  <button onClick={() => setTxForm({ ...txForm, type: "Nạp" })} className="flex-1 text-xs font-medium py-2" style={{ background: txForm.type === "Nạp" ? "#34d39922" : "transparent", color: txForm.type === "Nạp" ? "#34d399" : "#64748b" }}>Nạp thêm</button>
+                </div>
+                <Input type="date" value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
+                <Input placeholder="Số tiền (USD)" value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
+                <Btn onClick={addTransaction}><Plus size={14} /> Ghi nhận</Btn>
+              </div>
+              <Input placeholder="Ghi chú (không bắt buộc)" value={txForm.note} onChange={(e) => setTxForm({ ...txForm, note: e.target.value })} />
+
+              {transactions.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {transactions.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between text-xs px-3 py-2 rounded-md" style={{ background: "#0a0e14" }}>
+                      <span className="font-medium" style={{ color: t.type === "Rút" ? "#f87171" : "#34d399" }}>{t.type === "Rút" ? "− Rút" : "+ Nạp"} {fmtUSD(t.amount)}</span>
+                      <span className="text-slate-500">{t.date}</span>
+                      <span className="text-slate-500 flex-1 px-2 truncate">{t.note}</span>
+                      <button onClick={() => removeTransaction(t.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       ) : (
         <div className="text-sm text-slate-500">Chưa thiết lập vốn ban đầu — bấm bút chì để nhập.</div>
