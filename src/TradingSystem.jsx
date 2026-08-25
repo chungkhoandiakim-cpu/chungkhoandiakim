@@ -1582,7 +1582,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
     smc: { structure: false, liquiditySource: false, divergence: false, obFvgHtf: false, waveBC: false, entryAtFoot: false },
     killzone: false, newsClear: false,
     status: "Đang mở", exitPrice: "",
-    emotion: "Bình tĩnh", reason: "", pl: "", image: null,
+    emotion: "Bình tĩnh", reason: "", pl: "", images: [],
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
@@ -1611,16 +1611,19 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   ];
   const conditionsMet = conditions.filter((c) => c.passed).length;
 
-  async function handleImage(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  async function handleImages(e) {
+    const files = Array.from(e.target.files || []).slice(0, 3 - form.images.length);
+    if (!files.length) return;
     setBusy(true);
     try {
-      const dataUrl = await compressImage(file);
-      setForm((f) => ({ ...f, image: dataUrl }));
+      const urls = await Promise.all(files.map((f) => compressImage(f, 1400, 0.9)));
+      setForm((f) => ({ ...f, images: [...f.images, ...urls].slice(0, 3) }));
     } finally {
       setBusy(false);
     }
+  }
+  function removeImage(idx) {
+    setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== idx) }));
   }
   function save() {
     const symbolLabel = form.symbol === "Khác" ? form.customSymbol.trim().toUpperCase() : form.symbol;
@@ -1636,7 +1639,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   }
   function startEdit(j) {
     setEditingId(j.id);
-    setForm({ ...empty, ...j });
+    setForm({ ...empty, ...j, images: j.images || (j.image ? [j.image] : []) });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function cancelEdit() {
@@ -1824,19 +1827,34 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
         </div>
 
         <Textarea rows={2} placeholder="Lý do vào lệnh / luận điểm SMC..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
-        <div className="flex items-center justify-between mt-3">
-          <label className="flex items-center gap-1.5 text-xs rounded-md cursor-pointer px-3 py-2" style={inputStyle}>
-            <Upload size={13} /> {busy ? "Đang tải..." : form.image ? "Đã chọn ảnh" : "Tải ảnh biểu đồ"}
-            <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
-          </label>
+
+        <div className="mt-3">
+          <div className="text-xs text-slate-500 mb-2 flex items-center justify-between">
+            <span>Ảnh biểu đồ (tối đa 3 ảnh, chất lượng cao)</span>
+            <span className="font-data text-slate-600">{form.images.length}/3</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {form.images.map((img, idx) => (
+              <div key={idx} className="relative rounded-md overflow-hidden border" style={{ borderColor: "#263042", background: "#000", height: 110 }}>
+                <img src={img} alt={`ảnh ${idx + 1}`} className="w-full h-full object-contain" />
+                <button onClick={() => removeImage(idx)} className="absolute top-1 right-1 rounded-full p-1" style={{ background: "rgba(10,14,20,0.8)" }}>
+                  <X size={12} className="text-slate-300" />
+                </button>
+              </div>
+            ))}
+            {form.images.length < 3 && (
+              <label className="flex flex-col items-center justify-center gap-1.5 text-xs rounded-md cursor-pointer border border-dashed" style={{ borderColor: "#263042", height: 110, color: "#94a3b8" }}>
+                <Upload size={16} />
+                {busy ? "Đang tải..." : `Thêm ảnh (${form.images.length}/3)`}
+                <input type="file" accept="image/*" multiple onChange={handleImages} className="hidden" />
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end mt-3">
           <Btn onClick={save}>{editingId ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Ghi giao dịch</>}</Btn>
         </div>
-        {form.image && (
-          <div className="mt-3 flex items-center gap-2">
-            <img src={form.image} alt="preview" className="h-12 rounded border border-slate-700" />
-            <button onClick={() => setForm({ ...form, image: null })} className="text-xs text-slate-500 hover:text-red-400">Xóa ảnh</button>
-          </div>
-        )}
       </Card>
 
       {journal.length === 0 ? (
@@ -1846,15 +1864,21 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
           {journal.map((j) => {
             const jrr = computeRR(j);
             const smcOk = j.smc ? Object.values(j.smc).filter(Boolean).length : 0;
+            const jImages = j.images || (j.image ? [j.image] : []);
             return (
               <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
-                {j.image ? (
-                  <ZoomableThumb
-                    src={j.image}
-                    alt={j.symbolLabel}
-                    className="w-full md:w-32 h-24 flex-shrink-0"
-                    onClick={() => setLightbox({ image: j.image, caption: `${j.symbolLabel} · ${j.date} · ${j.direction} · Entry ${fmt(j.entry)}${j.reason ? " · " + j.reason : ""}` })}
-                  />
+                {jImages.length > 0 ? (
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    {jImages.map((img, idx) => (
+                      <ZoomableThumb
+                        key={idx}
+                        src={img}
+                        alt={`${j.symbolLabel} ảnh ${idx + 1}`}
+                        className="w-20 h-20 md:w-24 md:h-24"
+                        onClick={() => setLightbox({ image: img, caption: `${j.symbolLabel} · ${j.date} · ${j.direction} · Entry ${fmt(j.entry)}${j.reason ? " · " + j.reason : ""}` })}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
                     <ImageOff size={16} className="text-slate-700" />
