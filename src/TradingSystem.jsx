@@ -1588,6 +1588,11 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterDirection, setFilterDirection] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const [expandedId, setExpandedId] = useState(null);
 
   const rr = computeRR(form);
   const riskAmount = computeGoldRiskAmount(capital);
@@ -1860,53 +1865,106 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
       {journal.length === 0 ? (
         <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh Vàng/Dầu/BTC đầu tiên theo phương pháp SMC ở trên." /></Card>
       ) : (
-        <div className="space-y-3">
-          {journal.map((j) => {
-            const jrr = computeRR(j);
-            const smcOk = j.smc ? Object.values(j.smc).filter(Boolean).length : 0;
-            const jImages = j.images || (j.image ? [j.image] : []);
+        <>
+          <Card className="p-3 mb-3">
+            <div className="flex flex-col md:flex-row gap-2">
+              <Input placeholder="Tìm theo mã (VD: XAUUSD, BTC...)" value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1" />
+              <select value={filterDirection} onChange={(e) => setFilterDirection(e.target.value)} style={inputStyle} className="px-3 py-2 rounded-md text-sm outline-none">
+                <option value="all">Cả Long & Short</option>
+                <option value="Long">Chỉ Long</option>
+                <option value="Short">Chỉ Short</option>
+              </select>
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={inputStyle} className="px-3 py-2 rounded-md text-sm outline-none">
+                <option value="all">Tất cả trạng thái</option>
+                <option value="Đang mở">Đang mở</option>
+                <option value="Đã đóng">Đã đóng</option>
+              </select>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={inputStyle} className="px-3 py-2 rounded-md text-sm outline-none">
+                <option value="newest">Mới nhất trước</option>
+                <option value="oldest">Cũ nhất trước</option>
+              </select>
+            </div>
+          </Card>
+
+          {(() => {
+            const filtered = journal
+              .filter((j) => filterDirection === "all" || j.direction === filterDirection)
+              .filter((j) => filterStatus === "all" || j.status === filterStatus)
+              .filter((j) => !search.trim() || (j.symbolLabel || "").toLowerCase().includes(search.trim().toLowerCase()))
+              .sort((a, b) => (sortBy === "newest" ? (a.date < b.date ? 1 : -1) : (a.date > b.date ? 1 : -1)));
+
+            if (filtered.length === 0) {
+              return <Card className="p-10"><EmptyHint text="Không có lệnh nào khớp với bộ lọc hiện tại." /></Card>;
+            }
+
             return (
-              <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
-                {jImages.length > 0 ? (
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    {jImages.map((img, idx) => (
-                      <ZoomableThumb
-                        key={idx}
-                        src={img}
-                        alt={`${j.symbolLabel} ảnh ${idx + 1}`}
-                        className="w-20 h-20 md:w-24 md:h-24"
-                        onClick={() => setLightbox({ image: img, caption: `${j.symbolLabel} · ${j.date} · ${j.direction} · Entry ${fmt(j.entry)}${j.reason ? " · " + j.reason : ""}` })}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
-                    <ImageOff size={16} className="text-slate-700" />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-data font-bold text-amber-400">{j.symbolLabel}</span>
-                    <span className="text-xs text-slate-600">{j.date}</span>
-                    <span className="text-[11px] font-data px-1.5 py-0.5 rounded" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.timeframe}</span>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: j.direction === "Short" ? "#f8717122" : "#34d39922", color: j.direction === "Short" ? "#f87171" : "#34d399" }}>{j.direction}</span>
-                    <span className="text-[11px] text-purple-300">Sóng {j.wave}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
-                    <span className="text-[11px] font-data text-slate-500">Điều kiện {j.conditionsMet ?? "-"}/{j.conditionsTotal ?? 10}</span>
-                    {jrr !== null && <span className="text-xs font-data" style={{ color: jrr >= 2 ? "#34d399" : "#f87171" }}>R:R 1:{jrr}</span>}
-                    {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmt(j.pl)}</span>}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
-                  {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
-                </div>
-                <div className="flex gap-3 self-start">
-                  <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
-                  <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
-                </div>
-              </Card>
+              <div className="space-y-2">
+                {filtered.map((j) => {
+                  const jrr = computeRR(j);
+                  const jImages = j.images || (j.image ? [j.image] : []);
+                  const isOpen = expandedId === j.id;
+                  return (
+                    <Card key={j.id} className="overflow-hidden">
+                      <div className="p-3.5 flex items-center gap-3 cursor-pointer" onClick={() => setExpandedId(isOpen ? null : j.id)}>
+                        {jImages.length > 0 ? (
+                          <div className="w-11 h-11 rounded overflow-hidden border flex-shrink-0" style={{ borderColor: "#263042", background: "#000" }}>
+                            <img src={jImages[0]} alt={j.symbolLabel} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="w-11 h-11 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
+                            <ImageOff size={14} className="text-slate-700" />
+                          </div>
+                        )}
+                        <div className="w-24 flex-shrink-0">
+                          <div className="font-data font-bold text-amber-400 text-sm">{j.symbolLabel}</div>
+                          <div className="text-[11px] text-slate-600">{j.date}</div>
+                        </div>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: j.direction === "Short" ? "#f8717122" : "#34d39922", color: j.direction === "Short" ? "#f87171" : "#34d399" }}>{j.direction}</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 hidden sm:inline-block" style={{ background: j.status === "Đã đóng" ? "#1a2130" : "#fbbf2422", color: j.status === "Đã đóng" ? "#94a3b8" : "#fbbf24" }}>{j.status}</span>
+                        {jrr !== null && <span className="text-xs font-data flex-shrink-0" style={{ color: jrr >= 2 ? "#34d399" : "#f87171" }}>R:R 1:{jrr}</span>}
+                        {j.pl !== "" && <span className="text-xs font-data flex-shrink-0" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmt(j.pl)}</span>}
+                        <div className="flex-1" />
+                        <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={14} /></button>
+                          <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={14} /></button>
+                          <button onClick={() => setExpandedId(isOpen ? null : j.id)} className="text-slate-500 hover:text-purple-400">
+                            {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isOpen && (
+                        <div className="px-3.5 pb-4" style={{ borderTop: "1px solid #1c2432" }}>
+                          <div className="flex flex-wrap items-center gap-3 mt-3 mb-2">
+                            <span className="text-[11px] font-data px-1.5 py-0.5 rounded" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.timeframe}</span>
+                            <span className="text-[11px] text-purple-300">Sóng {j.wave}</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
+                            <span className="text-[11px] font-data text-slate-500">Điều kiện {j.conditionsMet ?? "-"}/{j.conditionsTotal ?? 10}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mb-2">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
+                          {j.reason && <div className="text-sm text-slate-300 mb-3">{j.reason}</div>}
+                          {jImages.length > 0 && (
+                            <div className="flex gap-2 flex-wrap">
+                              {jImages.map((img, idx) => (
+                                <ZoomableThumb
+                                  key={idx}
+                                  src={img}
+                                  alt={`${j.symbolLabel} ảnh ${idx + 1}`}
+                                  className="w-24 h-24"
+                                  onClick={() => setLightbox({ image: img, caption: `${j.symbolLabel} · ${j.date} · ${j.direction} · Entry ${fmt(j.entry)}${j.reason ? " · " + j.reason : ""}` })}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
             );
-          })}
-        </div>
+          })()}
+        </>
       )}
       <ImageLightbox image={lightbox?.image} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
     </div>
