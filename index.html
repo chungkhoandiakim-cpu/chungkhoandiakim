@@ -1,14 +1,34 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Hoàng Địa Kim</title>
+
+    <!-- PWA: cho phép "Thêm vào Màn hình chính" / cài như app thật -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0a0e14" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+
+    <!-- Hỗ trợ riêng cho iPhone/iPad (Safari không đọc manifest.json đầy đủ) -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hoàng Địa Kim" />
+
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Đăng ký Service Worker để trình duyệt cho phép cài đặt PWA -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
