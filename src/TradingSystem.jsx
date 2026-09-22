@@ -26,6 +26,7 @@ const K = {
   journalForex: "ts:journal-forex",
   psych: "ts:psychology",
   market: "ts:market-journal",
+  marketFx: "ts:market-journal-fx",
   stockLogs: "ts:stock-logs",
   profile: "ts:profile",
   screener: "ts:screener",
@@ -92,6 +93,39 @@ function fmtVol(n) {
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
+function groupByDate(entries) {
+  const groups = {};
+  entries.forEach((e) => {
+    const key = e.date || "Không rõ ngày";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  });
+  return Object.entries(groups).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+}
+function formatDayLabel(dateStr) {
+  if (!dateStr || dateStr === "Không rõ ngày") return dateStr;
+  const d = new Date(dateStr);
+  const days = ["CN", "Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7"];
+  return `${days[d.getDay()]}, ${dateStr}`;
+}
+function monthKeyOf(dateStr) {
+  if (!dateStr || dateStr.length < 7) return "Không rõ tháng";
+  return dateStr.slice(0, 7); // "YYYY-MM"
+}
+function groupByMonth(entries) {
+  const groups = {};
+  entries.forEach((e) => {
+    const key = monthKeyOf(e.date);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  });
+  return Object.entries(groups).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+}
+function formatMonthLabel(monthKey) {
+  if (!monthKey || monthKey === "Không rõ tháng") return monthKey;
+  const [y, m] = monthKey.split("-");
+  return `Tháng ${Number(m)}/${y}`;
+}
 
 function downloadFile(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -137,6 +171,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const [journal, setJournal] = useState([]);
   const [psych, setPsych] = useState({});
   const [market, setMarket] = useState([]);
+  const [marketFx, setMarketFx] = useState([]);
   const [stockLogs, setStockLogs] = useState({});
   const [profile, setProfile] = useState({ name: "", title: "Môi giới chứng khoán", phone: "", zalo: "", facebook: "", telegram: "", email: "", youtube: "", tiktok: "" });
   const [screener, setScreener] = useState([]);
@@ -147,7 +182,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
 
   useEffect(() => {
     (async () => {
-      const [w, p, j, ps, mk, sl, pf, sc, jg, gc, jf, cr] = await Promise.all([
+      const [w, p, j, ps, mk, sl, pf, sc, jg, gc, jf, cr, mfx] = await Promise.all([
         loadKey(K.watchlist, []),
         loadKey(K.plan, { goal: "", capital: "", allocations: [], rules: [] }),
         loadKey(K.journal, []),
@@ -160,6 +195,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         loadKey(K.goldCapital, { initialCapital: "", riskPerTrade: "1", maxDailyLoss: "3", maxConsecutiveLoss: "3", transactions: [] }),
         loadKey(K.journalForex, []),
         loadKey(K.crm, []),
+        loadKey(K.marketFx, []),
       ]);
       let mergedMarket = mk;
       if (ps && Object.keys(ps).length > 0) {
@@ -186,7 +222,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         saveKey(K.journalGold, mergedGoldJournal);
         saveKey(K.journalForex, []);
       }
-      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc); setJournalGold(mergedGoldJournal); setGoldCapital(gc); setJournalForex([]); setCrm(cr);
+      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc); setJournalGold(mergedGoldJournal); setGoldCapital(gc); setJournalForex([]); setCrm(cr); setMarketFx(mfx);
       setLoading(false);
     })();
   }, []);
@@ -204,6 +240,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const setJournalP = persist(K.journal, setJournal);
   const setPsychP = persist(K.psych, setPsych);
   const setMarketP = persist(K.market, setMarket);
+  const setMarketFxP = persist(K.marketFx, setMarketFx);
   const setStockLogsP = persist(K.stockLogs, setStockLogs);
   const setProfileP = persist(K.profile, setProfile);
   const setScreenerP = persist(K.screener, setScreener);
@@ -349,7 +386,7 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
           {tab === "performance" && <PerformanceStats journal={journal} journalGold={journalGold} />}
           {tab === "plan" && <PlanView plan={plan} setPlan={setPlanP} />}
           {tab === "journal" && <Journal journal={journal} setJournal={setJournalP} journalGold={journalGold} setJournalGold={setJournalGoldP} goldCapital={goldCapital} setGoldCapital={setGoldCapitalP} />}
-          {tab === "market" && <MarketJournal market={market} setMarket={setMarketP} />}
+          {tab === "market" && <MarketJournal market={market} setMarket={setMarketP} marketFx={marketFx} setMarketFx={setMarketFxP} />}
           {tab === "crm" && <CRM crm={crm} setCrm={setCrmP} />}
         </main>
       </div>
@@ -1313,6 +1350,7 @@ function StockJournal({ journal, setJournal }) {
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  const [openDates, setOpenDates] = useState({});
 
   async function handleImage(e) {
     const file = e.target.files[0];
@@ -1400,43 +1438,57 @@ function StockJournal({ journal, setJournal }) {
       {journal.length === 0 ? (
         <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh đầu tiên ở trên." /></Card>
       ) : (
-        <div className="space-y-3">
-          {journal.map((j) => (
-            <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
-              {j.image ? (
-                <ZoomableThumb
-                  src={j.image}
-                  alt={j.ticker}
-                  className="w-full md:w-32 h-24 flex-shrink-0"
-                  onClick={() => setLightbox({ image: j.image, caption: `${j.ticker} · ${j.date} · ${j.side} · Giá ${fmt(j.price)}${j.reason ? " · " + j.reason : ""}` })}
-                />
-              ) : (
-                <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
-                  <ImageOff size={16} className="text-slate-700" />
-                </div>
-              )}
-              <div className="flex-1">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-data font-bold text-amber-400">{j.ticker}</span>
-                  <span className="text-xs text-slate-600">{j.date}</span>
-                  <span className="text-xs font-data" style={{ color: j.side === "Mua" ? "#34d399" : "#f87171" }}>{j.side}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
-                  {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmtBillion(j.pl)}</span>}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">Giá {fmt(j.price)} · KL {fmtVol(j.qty)}</div>
-                {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
-                {j.lesson && (
-                  <div className="text-xs text-purple-300 mt-1.5 px-2 py-1.5 rounded-md flex items-start gap-1.5" style={{ background: "rgba(168,85,247,0.08)" }}>
-                    <Sparkles size={12} className="mt-0.5 flex-shrink-0" /> {j.lesson}
+        <div className="space-y-2">
+          {groupByDate(journal).map(([dateKey, dayEntries]) => {
+            const dayPL = dayEntries.filter((x) => x.pl !== "" && !isNaN(Number(x.pl))).reduce((s, x) => s + Number(x.pl), 0);
+            const dayOpen = openDates[dateKey] !== false;
+            return (
+              <Card key={dateKey} className="overflow-hidden">
+                <button onClick={() => setOpenDates((p) => ({ ...p, [dateKey]: !dayOpen }))} className="w-full p-3 flex items-center justify-between text-left" style={{ background: "#0d1119" }}>
+                  <div className="flex items-center gap-2.5">
+                    {dayOpen ? <ChevronUp size={15} className="text-slate-500" /> : <ChevronDown size={15} className="text-slate-500" />}
+                    <span className="text-sm font-semibold text-amber-300">{formatDayLabel(dateKey)}</span>
+                    <span className="text-xs text-slate-500">{dayEntries.length} lệnh</span>
+                  </div>
+                  {dayPL !== 0 && <span className="text-xs font-data font-semibold" style={{ color: dayPL >= 0 ? "#34d399" : "#f87171" }}>{dayPL >= 0 ? "+" : ""}{fmtBillion(dayPL)}</span>}
+                </button>
+                {dayOpen && (
+                  <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                    {dayEntries.map((j) => (
+                      <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
+                        {j.image ? (
+                          <ZoomableThumb src={j.image} alt={j.ticker} className="w-full md:w-32 h-24 flex-shrink-0" onClick={() => setLightbox({ image: j.image, caption: `${j.ticker} · ${j.date} · ${j.side} · Giá ${fmt(j.price)}${j.reason ? " · " + j.reason : ""}` })} />
+                        ) : (
+                          <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
+                            <ImageOff size={16} className="text-slate-700" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="font-data font-bold text-amber-400">{j.ticker}</span>
+                            <span className="text-xs font-data" style={{ color: j.side === "Mua" ? "#34d399" : "#f87171" }}>{j.side}</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
+                            {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmtBillion(j.pl)}</span>}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">Giá {fmt(j.price)} · KL {fmtVol(j.qty)}</div>
+                          {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
+                          {j.lesson && (
+                            <div className="text-xs text-purple-300 mt-1.5 px-2 py-1.5 rounded-md flex items-start gap-1.5" style={{ background: "rgba(168,85,247,0.08)" }}>
+                              <Sparkles size={12} className="mt-0.5 flex-shrink-0" /> {j.lesson}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-3 self-start">
+                          <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
+                          <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
+                        </div>
+                      </Card>
+                    ))}
                   </div>
                 )}
-              </div>
-              <div className="flex gap-3 self-start">
-                <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
-                <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
       <ImageLightbox image={lightbox?.image} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
@@ -1710,10 +1762,10 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   const [filterDirection, setFilterDirection] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [expandedId, setExpandedId] = useState(null);
-
-  const rr = computeRR(form);
-  const riskAmount = computeGoldRiskAmount(capital);
+  const [openDates, setOpenDates] = useState({});
+  const [openMonths, setOpenMonths] = useState({});
   const riskWithinLimit = !form.riskPercent || !capital.riskPerTrade ? null : Number(form.riskPercent) <= Number(capital.riskPerTrade);
+  const rr = computeRR(form);
   const effectiveContractSize = form.contractSize !== "" ? form.contractSize : LOT_CONTRACT_SIZE[form.symbol] ?? 1;
   const autoPnl = form.status === "Đã đóng"
     ? computeInstrumentPnl({ symbol: form.symbol, direction: form.direction, entry: form.entry, exit: form.exitPrice, lot: form.lot, contractSize: effectiveContractSize })
@@ -2025,8 +2077,47 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
             }
 
             return (
-              <div className="space-y-2">
-                {filtered.map((j) => {
+              <div className="space-y-3">
+                {groupByMonth(filtered).map(([monthKey, monthEntries], monthIdx) => {
+                  const monthPL = monthEntries.filter((x) => x.pl !== "" && !isNaN(Number(x.pl))).reduce((s, x) => s + Number(x.pl), 0);
+                  const monthOpen = openMonths[monthKey] !== undefined ? openMonths[monthKey] : monthIdx === 0;
+                  return (
+                    <Card key={monthKey} className="overflow-hidden" style={{ borderColor: "#f59e0b40" }}>
+                      <button
+                        onClick={() => setOpenMonths((p) => ({ ...p, [monthKey]: !monthOpen }))}
+                        className="w-full p-3.5 flex items-center justify-between text-left"
+                        style={{ background: "linear-gradient(90deg,#1a140a,#12161f)" }}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {monthOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-amber-400" />}
+                          <span className="text-base">📁</span>
+                          <span className="text-sm font-bold text-amber-300">{formatMonthLabel(monthKey)}</span>
+                          <span className="text-xs text-slate-500">{monthEntries.length} lệnh</span>
+                        </div>
+                        {monthPL !== 0 && <span className="text-xs font-data font-semibold" style={{ color: monthPL >= 0 ? "#34d399" : "#f87171" }}>{monthPL >= 0 ? "+" : ""}{fmt(monthPL)}</span>}
+                      </button>
+                      {monthOpen && (
+                        <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                {groupByDate(monthEntries).map(([dateKey, dayEntries]) => {
+                  const dayPL = dayEntries.filter((x) => x.pl !== "" && !isNaN(Number(x.pl))).reduce((s, x) => s + Number(x.pl), 0);
+                  const dayOpen = openDates[dateKey] !== false;
+                  return (
+                    <Card key={dateKey} className="overflow-hidden">
+                      <button
+                        onClick={() => setOpenDates((p) => ({ ...p, [dateKey]: !dayOpen }))}
+                        className="w-full p-3 flex items-center justify-between text-left"
+                        style={{ background: "#0d1119" }}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {dayOpen ? <ChevronUp size={15} className="text-slate-500" /> : <ChevronDown size={15} className="text-slate-500" />}
+                          <span className="text-sm font-semibold text-amber-300">{formatDayLabel(dateKey)}</span>
+                          <span className="text-xs text-slate-500">{dayEntries.length} lệnh</span>
+                        </div>
+                        {dayPL !== 0 && <span className="text-xs font-data font-semibold" style={{ color: dayPL >= 0 ? "#34d399" : "#f87171" }}>{dayPL >= 0 ? "+" : ""}{fmt(dayPL)}</span>}
+                      </button>
+                      {dayOpen && (
+                        <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                {dayEntries.map((j) => {
                   const jrr = computeRR(j);
                   const jImages = j.images || (j.image ? [j.image] : []);
                   const isOpen = expandedId === j.id;
@@ -2088,6 +2179,16 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
                               ))}
                             </div>
                           )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
                         </div>
                       )}
                     </Card>
@@ -2193,6 +2294,7 @@ function ForexJournal({ journal, setJournal }) {
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [openMonths, setOpenMonths] = useState({});
 
   const rr = computeRR(form);
   const stepsCount = Object.values(form.steps).filter(Boolean).length;
@@ -2319,36 +2421,61 @@ function ForexJournal({ journal, setJournal }) {
         <Card className="p-10"><EmptyHint text="Chưa có giao dịch nào. Ghi lại lệnh Forex đầu tiên theo ICT Silver Bullet ở trên." /></Card>
       ) : (
         <div className="space-y-3">
-          {journal.map((j) => {
-            const jrr = computeRR(j);
-            const kz = KILLZONES.find((k) => k.id === j.killzone)?.label || j.killzone;
+          {groupByMonth(journal).map(([monthKey, monthEntries], monthIdx) => {
+            const monthPL = monthEntries.filter((x) => x.pl !== "" && !isNaN(Number(x.pl))).reduce((s, x) => s + Number(x.pl), 0);
+            const monthOpen = openMonths[monthKey] !== undefined ? openMonths[monthKey] : monthIdx === 0;
             return (
-              <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
-                {j.image ? (
-                  <img src={j.image} alt={j.symbolLabel} className="w-full md:w-32 h-24 object-cover rounded border border-slate-700 flex-shrink-0" />
-                ) : (
-                  <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
-                    <ImageOff size={16} className="text-slate-700" />
+              <Card key={monthKey} className="overflow-hidden" style={{ borderColor: "#f59e0b40" }}>
+                <button
+                  onClick={() => setOpenMonths((p) => ({ ...p, [monthKey]: !monthOpen }))}
+                  className="w-full p-3.5 flex items-center justify-between text-left"
+                  style={{ background: "linear-gradient(90deg,#1a140a,#12161f)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {monthOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-amber-400" />}
+                    <span className="text-base">📁</span>
+                    <span className="text-sm font-bold text-amber-300">{formatMonthLabel(monthKey)}</span>
+                    <span className="text-xs text-slate-500">{monthEntries.length} lệnh</span>
+                  </div>
+                  {monthPL !== 0 && <span className="text-xs font-data font-semibold" style={{ color: monthPL >= 0 ? "#34d399" : "#f87171" }}>{monthPL >= 0 ? "+" : ""}{fmt(monthPL)}</span>}
+                </button>
+                {monthOpen && (
+                  <div className="p-2 space-y-3" style={{ borderTop: "1px solid #1c2432" }}>
+                    {monthEntries.map((j) => {
+                      const jrr = computeRR(j);
+                      const kz = KILLZONES.find((k) => k.id === j.killzone)?.label || j.killzone;
+                      return (
+                        <Card key={j.id} className="p-4 flex flex-col md:flex-row gap-4">
+                          {j.image ? (
+                            <img src={j.image} alt={j.symbolLabel} className="w-full md:w-32 h-24 object-cover rounded border border-slate-700 flex-shrink-0" />
+                          ) : (
+                            <div className="w-full md:w-32 h-24 rounded border border-dashed flex items-center justify-center flex-shrink-0" style={{ borderColor: "#263042" }}>
+                              <ImageOff size={16} className="text-slate-700" />
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-data font-bold text-amber-400">{j.symbolLabel}</span>
+                              <span className="text-xs text-slate-600">{j.date}</span>
+                              <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: "#1a2130", color: "#94a3b8" }}>{kz}</span>
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: j.direction === "Short" ? "#f8717122" : "#34d39922", color: j.direction === "Short" ? "#f87171" : "#34d399" }}>{j.direction}</span>
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
+                              <span className="text-[11px] font-data text-slate-500">Bước {j.stepsCount ?? "-"}/{j.stepsTotal ?? 7}</span>
+                              {jrr !== null && <span className="text-xs font-data" style={{ color: jrr >= 2 ? "#34d399" : "#f87171" }}>R:R 1:{jrr}</span>}
+                              {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmt(j.pl)}</span>}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
+                            {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
+                          </div>
+                          <div className="flex gap-3 self-start">
+                            <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
+                            <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
+                          </div>
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-data font-bold text-amber-400">{j.symbolLabel}</span>
-                    <span className="text-xs text-slate-600">{j.date}</span>
-                    <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: "#1a2130", color: "#94a3b8" }}>{kz}</span>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: j.direction === "Short" ? "#f8717122" : "#34d39922", color: j.direction === "Short" ? "#f87171" : "#34d399" }}>{j.direction}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>{j.emotion}</span>
-                    <span className="text-[11px] font-data text-slate-500">Bước {j.stepsCount ?? "-"}/{j.stepsTotal ?? 7}</span>
-                    {jrr !== null && <span className="text-xs font-data" style={{ color: jrr >= 2 ? "#34d399" : "#f87171" }}>R:R 1:{jrr}</span>}
-                    {j.pl !== "" && <span className="text-xs font-data" style={{ color: Number(j.pl) >= 0 ? "#34d399" : "#f87171" }}>{Number(j.pl) >= 0 ? "+" : ""}{fmt(j.pl)}</span>}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">Entry {fmt(j.entry)} · SL {fmt(j.sl)} · TP {fmt(j.tp)} · KL {fmt(j.lot)}</div>
-                  {j.reason && <div className="text-sm text-slate-400 mt-1.5">{j.reason}</div>}
-                </div>
-                <div className="flex gap-3 self-start">
-                  <button onClick={() => startEdit(j)} className="text-slate-600 hover:text-amber-400"><Pencil size={15} /></button>
-                  <button onClick={() => remove(j.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={15} /></button>
-                </div>
               </Card>
             );
           })}
@@ -2379,7 +2506,7 @@ function marketByDate(market) {
   return map;
 }
 
-function MarketJournal({ market, setMarket }) {
+function StockMarketJournal({ market, setMarket }) {
   const empty = { date: todayISO(), vnindex: "", change: "", volume: "", foreignNet: "", breadth: "", mood: 3, discipline: 3, note: "", images: [] };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
@@ -2482,9 +2609,7 @@ function MarketJournal({ market, setMarket }) {
 
   return (
     <div>
-      <PageHeader title="Nhật ký thị trường & Tâm lý" sub="Ghi nhận diễn biến thị trường và trạng thái tâm lý mỗi ngày trong cùng một nơi — lưu trữ nhiều năm, tải file bất cứ lúc nào." />
-      <div className="px-6 md:px-10">
-        <Card className="p-5 mb-6">
+      <Card className="p-5 mb-6">
           <div className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2"><Flame size={15} className="text-amber-400" /> Bản đồ nhiệt thị trường & tâm lý</div>
           <FullHeatmap market={market} selected={form.date} onSelect={selectHeatmapDay} />
           <div className="flex items-center gap-4 mt-4 text-[12px] text-slate-400">
@@ -2627,7 +2752,251 @@ function MarketJournal({ market, setMarket }) {
             })}
           </div>
         )}
+      <ImageLightbox image={lightbox?.image} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
+    </div>
+  );
+}
+
+function MarketJournal({ market, setMarket, marketFx, setMarketFx }) {
+  const [subTab, setSubTab] = useState("stock"); // "stock" | "fx"
+  return (
+    <div>
+      <PageHeader title="Nhật ký thị trường & Tâm lý" sub="Ghi nhận diễn biến thị trường và trạng thái tâm lý mỗi ngày trong cùng một nơi — lưu trữ nhiều năm, tải file bất cứ lúc nào." />
+      <div className="px-6 md:px-10">
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            onClick={() => setSubTab("stock")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "stock" ? { background: "linear-gradient(90deg,#7c3aed,#a855f7)", color: "#fff" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <BookOpen size={15} /> Chứng khoán (VNIndex)
+          </button>
+          <button
+            onClick={() => setSubTab("fx")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "fx" ? { background: "linear-gradient(90deg,#f59e0b,#fbbf24)", color: "#1a1206" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <Flame size={15} /> Forex · Vàng · Dầu · BTC
+          </button>
+        </div>
+        {subTab === "stock" && <StockMarketJournal market={market} setMarket={setMarket} />}
+        {subTab === "fx" && <FxMarketJournal market={marketFx} setMarket={setMarketFx} />}
       </div>
+    </div>
+  );
+}
+
+function FxMarketJournal({ market, setMarket }) {
+  const empty = { date: todayISO(), plan: "", mood: 3, discipline: 3, note: "", images: [] };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const [openMonths, setOpenMonths] = useState({});
+  const [openDates, setOpenDates] = useState({});
+
+  const byDate = useMemo(() => marketByDate(market), [market]);
+
+  function normalizeEntry(m) {
+    return {
+      date: m.date, plan: m.plan ?? "", mood: m.mood ?? 3, discipline: m.discipline ?? 3,
+      note: m.note ?? "", images: m.images || (m.image ? [m.image] : []),
+    };
+  }
+
+  async function handleImages(e) {
+    const files = Array.from(e.target.files || []).slice(0, 4 - form.images.length);
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const urls = await Promise.all(files.map((f) => compressImage(f, 640, 0.75)));
+      setForm((f) => ({ ...f, images: [...f.images, ...urls].slice(0, 4) }));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function removeImage(idx) {
+    setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== idx) }));
+  }
+
+  function save() {
+    if (!form.date) return;
+    if (editingId) {
+      setMarket((prev) => prev.map((m) => (m.id === editingId ? { ...form, id: editingId } : m)));
+    } else if (byDate[form.date]) {
+      setMarket((prev) => prev.map((m) => (m.date === form.date ? { ...form, id: m.id } : m)));
+    } else {
+      setMarket((prev) => [{ id: Date.now(), ...form }, ...prev]);
+    }
+    cancelEdit();
+  }
+  function startEdit(m) {
+    setEditingId(m.id);
+    setForm(normalizeEntry(m));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(empty);
+  }
+  function remove(id) {
+    setMarket((prev) => prev.filter((m) => m.id !== id));
+    if (editingId === id) cancelEdit();
+  }
+
+  return (
+    <div>
+      <Card className="p-4 mb-6">
+        {editingId ? (
+          <div className="text-xs text-amber-400 mb-3 flex items-center gap-2">
+            <Pencil size={12} /> Đang chỉnh sửa ngày {form.date} — <button onClick={cancelEdit} className="underline text-slate-500">hủy</button>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 mb-3">Ghi nhận ngày {form.date}</div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+          <Field label={`Tâm trạng (${form.mood}/5)`}>
+            <input type="range" min={1} max={5} value={form.mood} onChange={(e) => setForm({ ...form, mood: Number(e.target.value) })} className="w-full accent-amber-400" />
+          </Field>
+          <Field label={`Kỷ luật tuân thủ kế hoạch (${form.discipline}/5)`}>
+            <input type="range" min={1} max={5} value={form.discipline} onChange={(e) => setForm({ ...form, discipline: Number(e.target.value) })} className="w-full accent-amber-400" />
+          </Field>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-xs text-slate-400 mb-1.5 font-medium">Kế hoạch giao dịch trong ngày</div>
+          <Textarea
+            className="text-[15px] leading-relaxed"
+            rows={3}
+            placeholder="Kế hoạch giao dịch Forex/Vàng/Dầu/BTC hôm nay — vùng giá dự kiến, kịch bản Long/Short, mức rủi ro..."
+            value={form.plan}
+            onChange={(e) => setForm({ ...form, plan: e.target.value })}
+            style={{ color: "#f1f5f9" }}
+          />
+        </div>
+
+        <Textarea
+          className="mt-3 text-[15px] leading-relaxed"
+          rows={2}
+          placeholder="Nhận định thị trường & ghi chú tâm lý trong ngày..."
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+          style={{ color: "#f1f5f9" }}
+        />
+
+        <div className="mt-4">
+          <div className="text-xs text-slate-400 mb-2 font-medium">Ảnh minh họa (tối đa 4 ảnh — biểu đồ, chỉ số, tâm trạng...)</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {form.images.map((img, idx) => (
+              <div key={idx} className="relative rounded-md overflow-hidden border" style={{ borderColor: "#263042", background: "#000", height: 110 }}>
+                <img src={img} alt={`ảnh ${idx + 1}`} className="w-full h-full object-contain" />
+                <button onClick={() => removeImage(idx)} className="absolute top-1 right-1 rounded-full p-1" style={{ background: "rgba(10,14,20,0.8)" }}>
+                  <X size={12} className="text-slate-300" />
+                </button>
+              </div>
+            ))}
+            {form.images.length < 4 && (
+              <label className="flex flex-col items-center justify-center gap-1.5 text-xs rounded-md cursor-pointer border border-dashed" style={{ borderColor: "#263042", height: 110, color: "#94a3b8" }}>
+                <Upload size={16} />
+                {busy ? "Đang tải..." : `Thêm ảnh (${form.images.length}/4)`}
+                <input type="file" accept="image/*" multiple onChange={handleImages} className="hidden" />
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <Btn onClick={save}>{editingId || byDate[form.date] ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Ghi nhận</>}</Btn>
+        </div>
+      </Card>
+
+      {market.length === 0 ? (
+        <Card className="p-10"><EmptyHint text="Chưa có bản ghi nào. Ghi nhận kế hoạch và tâm lý giao dịch Forex/Vàng/Dầu/BTC đầu tiên ở trên." /></Card>
+      ) : (
+        <div className="space-y-3">
+          {groupByMonth(market).map(([monthKey, monthEntries], monthIdx) => {
+            const monthOpen = openMonths[monthKey] !== undefined ? openMonths[monthKey] : monthIdx === 0;
+            return (
+              <Card key={monthKey} className="overflow-hidden" style={{ borderColor: "#f59e0b40" }}>
+                <button
+                  onClick={() => setOpenMonths((p) => ({ ...p, [monthKey]: !monthOpen }))}
+                  className="w-full p-3.5 flex items-center justify-between text-left"
+                  style={{ background: "linear-gradient(90deg,#1a140a,#12161f)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {monthOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-amber-400" />}
+                    <span className="text-base">📁</span>
+                    <span className="text-sm font-bold text-amber-300">{formatMonthLabel(monthKey)}</span>
+                    <span className="text-xs text-slate-500">{monthEntries.length} ngày</span>
+                  </div>
+                </button>
+                {monthOpen && (
+                  <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                    {groupByDate(monthEntries).map(([dateKey, dayEntries]) => {
+                      const dayOpen = openDates[dateKey] !== false;
+                      const m = dayEntries[0];
+                      const images = m.images || (m.image ? [m.image] : []);
+                      return (
+                        <Card key={dateKey} className="overflow-hidden">
+                          <button
+                            onClick={() => setOpenDates((p) => ({ ...p, [dateKey]: !dayOpen }))}
+                            className="w-full p-3 flex items-center justify-between text-left"
+                            style={{ background: "#0d1119" }}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              {dayOpen ? <ChevronUp size={15} className="text-slate-500" /> : <ChevronDown size={15} className="text-slate-500" />}
+                              <span className="text-sm font-semibold text-amber-300">{formatDayLabel(dateKey)}</span>
+                            </div>
+                            {m.mood !== undefined && (
+                              <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: "#1a2130", color: "#cbd5e1" }}>
+                                <span className="w-2 h-2 rounded-sm" style={{ background: scoreColor((Number(m.mood) + Number(m.discipline)) / 2) }} />
+                                Tâm lý {m.mood}/5 · Kỷ luật {m.discipline}/5
+                              </span>
+                            )}
+                          </button>
+                          {dayOpen && (
+                            <div className="p-3.5" style={{ borderTop: "1px solid #1c2432" }}>
+                              {m.plan && (
+                                <div className="mb-2">
+                                  <div className="text-[11px] text-amber-400 font-medium mb-1">Kế hoạch giao dịch</div>
+                                  <div className="text-sm text-slate-200 leading-relaxed">{m.plan}</div>
+                                </div>
+                              )}
+                              {m.note && <div className="text-[15px] text-slate-200 leading-relaxed mt-2">{m.note}</div>}
+                              {images.length > 0 && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                                  {images.map((img, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="rounded-md overflow-hidden border cursor-pointer relative group"
+                                      style={{ borderColor: "#263042", background: "#000", height: 130 }}
+                                      onClick={() => setLightbox({ image: img, caption: `${m.date}${m.note ? " · " + m.note : ""}` })}
+                                    >
+                                      <img src={img} alt={`${m.date} ảnh ${idx + 1}`} className="w-full h-full object-contain" />
+                                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(10,14,20,0.5)" }}>
+                                        <Sparkles size={14} className="text-amber-300" />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex gap-3 justify-end mt-3">
+                                <button onClick={() => startEdit(m)} className="text-slate-500 hover:text-amber-400"><Pencil size={15} /></button>
+                                <button onClick={() => remove(m.id)} className="text-slate-500 hover:text-red-400"><Trash2 size={15} /></button>
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
       <ImageLightbox image={lightbox?.image} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
     </div>
   );
