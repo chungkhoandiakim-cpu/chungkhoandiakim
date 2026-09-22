@@ -1748,7 +1748,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   const empty = {
     symbol: "XAUUSD (Vàng)", customSymbol: "", date: todayISO(), direction: "Long", timeframe: "H4", wave: "B",
     entry: "", sl: "", tp: "", lot: "", contractSize: "", riskPercent: "",
-    smc: { structure: false, liquiditySource: false, divergence: false, obFvgHtf: false, waveBC: false, entryAtFoot: false },
+    smc: { structure: false, liquiditySide: "", sweepDone: false, entryTimeframe: "M15", wickRejection: false, enteredNextCandle: false, fvg: false, ob: false },
     killzone: false, newsClear: false,
     status: "Đang mở", exitPrice: "",
     emotion: "Bình tĩnh", reason: "", pl: "", lesson: "", images: [],
@@ -1773,11 +1773,12 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
 
   const conditions = [
     { label: "Bước 1: Xác định cấu trúc", passed: form.smc.structure },
-    { label: "Bước 2: Thanh khoản & nguồn gốc sóng", passed: form.smc.liquiditySource },
-    { label: "Bước 3: Yếu tố phân kỳ", passed: form.smc.divergence },
-    { label: "Bước 4: OB/FVG khung lớn", passed: form.smc.obFvgHtf },
-    { label: "Bước 5: Sóng B → C (ICT)", passed: form.smc.waveBC },
-    { label: "Bước 6: Entry sát chân sóng đã quét", passed: form.smc.entryAtFoot },
+    { label: "Bước 2: Quét thanh khoản (Buy-side/Sell-side liquidity)", passed: !!form.smc.liquiditySide },
+    { label: "Đã có Sweep (giá đã quét thanh khoản)", passed: form.smc.sweepDone },
+    { label: `Nến rút râu xác nhận trên ${form.smc.entryTimeframe}`, passed: form.smc.wickRejection },
+    { label: `Vào lệnh ở cây ${form.smc.entryTimeframe} tiếp theo`, passed: form.smc.enteredNextCandle },
+    { label: "Có FVG (Fair Value Gap)", passed: form.smc.fvg },
+    { label: "Có OB (Order Block)", passed: form.smc.ob },
     { label: "R:R đạt tối thiểu 1:2", passed: rr !== null && rr >= 2 },
     { label: "Rủi ro trong hạn mức cho phép", passed: riskWithinLimit === true },
     { label: "Đúng khung giờ giao dịch tốt (Kill Zone)", passed: form.killzone },
@@ -1813,7 +1814,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   }
   function startEdit(j) {
     setEditingId(j.id);
-    setForm({ ...empty, ...j, images: j.images || (j.image ? [j.image] : []) });
+    setForm({ ...empty, ...j, smc: { ...empty.smc, ...(j.smc || {}) }, images: j.images || (j.image ? [j.image] : []) });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function cancelEdit() {
@@ -1826,6 +1827,9 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
   }
   function toggleSmc(id) {
     setForm((f) => ({ ...f, smc: { ...f.smc, [id]: !f.smc[id] } }));
+  }
+  function setSmc(id, value) {
+    setForm((f) => ({ ...f, smc: { ...f.smc, [id]: value } }));
   }
 
   return (
@@ -1934,7 +1938,7 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
         </div>
 
         <div className="mb-3">
-          <div className="text-xs text-slate-500 mb-2">Phương pháp vào lệnh — 6 bước</div>
+          <div className="text-xs text-slate-500 mb-2">Phương pháp vào lệnh — Quét thanh khoản + Nến rút râu</div>
           <div className="space-y-1.5">
             <StepToggle
               title="Bước 1: Xác định cấu trúc"
@@ -1943,39 +1947,79 @@ function GoldOilBtcJournal({ journal, setJournal, capital, setCapital }) {
               onToggle={() => toggleSmc("structure")}
               size="small"
             />
+
+            <div className="px-4 py-3 rounded-lg" style={{ background: "#0a0e14", border: "1px solid #1c2432" }}>
+              <div className="text-sm text-slate-200 font-medium mb-1.5">Bước 2: Quét thanh khoản — Buy-side / Sell-side liquidity</div>
+              <div className="text-[11px] text-slate-500 mb-2">Xác định phe thanh khoản bị quét: đỉnh cũ/Equal High (Buy-side) hay đáy cũ/Equal Low (Sell-side)</div>
+              <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "#263042" }}>
+                <button
+                  onClick={() => setSmc("liquiditySide", "buy_side")}
+                  className="flex-1 text-xs font-medium py-2"
+                  style={{ background: form.smc.liquiditySide === "buy_side" ? "#f8717122" : "transparent", color: form.smc.liquiditySide === "buy_side" ? "#f87171" : "#64748b" }}
+                >
+                  Buy-side liquidity (quét đỉnh)
+                </button>
+                <button
+                  onClick={() => setSmc("liquiditySide", "sell_side")}
+                  className="flex-1 text-xs font-medium py-2"
+                  style={{ background: form.smc.liquiditySide === "sell_side" ? "#34d39922" : "transparent", color: form.smc.liquiditySide === "sell_side" ? "#34d399" : "#64748b" }}
+                >
+                  Sell-side liquidity (quét đáy)
+                </button>
+              </div>
+            </div>
+
             <StepToggle
-              title="Bước 2: Tìm thanh khoản & nguồn gốc sóng sau khi quét"
-              hint="Xác định vùng thanh khoản đã bị quét, và điểm khởi nguồn (chân) của nhịp sóng mới hình thành từ đó"
-              checked={form.smc.liquiditySource}
-              onToggle={() => toggleSmc("liquiditySource")}
+              title="Đã có Sweep? (giá đã thực sự quét thanh khoản)"
+              hint="Xác nhận giá đã chọc qua vùng thanh khoản mục tiêu trước khi tìm nến xác nhận"
+              checked={form.smc.sweepDone}
+              onToggle={() => toggleSmc("sweepDone")}
+              size="small"
+            />
+
+            <div className="px-4 py-3 rounded-lg" style={{ background: "#0a0e14", border: "1px solid #1c2432" }}>
+              <div className="text-sm text-slate-200 font-medium mb-1.5">Bước 3: Nến rút râu (rejection wick) trên M15 · H1 · H4</div>
+              <div className="text-[11px] text-slate-500 mb-2">Sau khi quét thanh khoản Buy-side/Sell-side, chờ 1 cây nến rút râu trên M15/H1/H4 rồi vào lệnh luôn ở cây tiếp theo</div>
+              <div className="flex rounded-md overflow-hidden border mb-2.5" style={{ borderColor: "#263042" }}>
+                {["M15", "H1", "H4"].map((tf) => (
+                  <button
+                    key={tf}
+                    onClick={() => setSmc("entryTimeframe", tf)}
+                    className="flex-1 text-xs font-medium py-2"
+                    style={{ background: form.smc.entryTimeframe === tf ? "#fbbf2422" : "transparent", color: form.smc.entryTimeframe === tf ? "#fbbf24" : "#64748b" }}
+                  >
+                    {tf}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <StepToggle
+                  title={`Có nến rút râu xác nhận trên ${form.smc.entryTimeframe}`}
+                  checked={form.smc.wickRejection}
+                  onToggle={() => toggleSmc("wickRejection")}
+                  size="small"
+                />
+                <StepToggle
+                  title={`Vào lệnh ở cây ${form.smc.entryTimeframe} tiếp theo`}
+                  checked={form.smc.enteredNextCandle}
+                  onToggle={() => toggleSmc("enteredNextCandle")}
+                  size="small"
+                />
+              </div>
+            </div>
+
+            <StepToggle
+              title="Bước 4: Có FVG (Fair Value Gap)"
+              hint="Xác định khoảng trống giá (Fair Value Gap) tại vùng vào lệnh"
+              checked={form.smc.fvg}
+              onToggle={() => toggleSmc("fvg")}
               size="small"
             />
             <StepToggle
-              title="Bước 3: Yếu tố phân kỳ"
-              hint="Kiểm tra phân kỳ RSI hoặc phân kỳ liên thị trường (SMT) tại vùng vừa quét thanh khoản — xác nhận thêm khả năng đảo chiều trước khi đi tiếp"
-              checked={form.smc.divergence}
-              onToggle={() => toggleSmc("divergence")}
-              size="small"
-            />
-            <StepToggle
-              title="Bước 4: Tìm OB/FVG khung lớn để vào lệnh khung nhỏ"
-              hint="Xác định Order Block/FVG trên khung lớn, chờ giá hồi về rồi tìm điểm vào chính xác trên khung nhỏ"
-              checked={form.smc.obFvgHtf}
-              onToggle={() => toggleSmc("obFvgHtf")}
-              size="small"
-            />
-            <StepToggle
-              title="Bước 5: Sóng ABC (ICT) — vào lệnh đỉnh sóng B, chốt tại C"
-              hint="Xác định sóng B (đỉnh/đáy hồi ngược) làm vùng vào lệnh, mục tiêu chốt lời tại vùng sóng C"
-              checked={form.smc.waveBC}
-              onToggle={() => toggleSmc("waveBC")}
-              size="small"
-            />
-            <StepToggle
-              title="Bước 6: Entry càng sát chân sóng càng tốt"
-              hint="Chỉ vào lệnh khi chân sóng đó đã thực sự quét thanh khoản — entry càng gần chân sóng, R:R càng tối ưu"
-              checked={form.smc.entryAtFoot}
-              onToggle={() => toggleSmc("entryAtFoot")}
+              title="Bước 5: Có OB (Order Block)"
+              hint="Xác định vùng Order Block hỗ trợ cho điểm vào lệnh"
+              checked={form.smc.ob}
+              onToggle={() => toggleSmc("ob")}
               size="small"
             />
           </div>
@@ -2787,7 +2831,10 @@ function MarketJournal({ market, setMarket, marketFx, setMarketFx }) {
 }
 
 function FxMarketJournal({ market, setMarket }) {
-  const empty = { date: todayISO(), plan: "", mood: 3, discipline: 3, note: "", images: [] };
+  const empty = {
+    date: todayISO(), plan: "", mood: 3, discipline: 3, note: "", images: [],
+    smc: { structure: false, liquiditySide: "", sweepDone: false, entryTimeframe: "M15", wickRejection: false, fvg: false, ob: false },
+  };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -2801,7 +2848,14 @@ function FxMarketJournal({ market, setMarket }) {
     return {
       date: m.date, plan: m.plan ?? "", mood: m.mood ?? 3, discipline: m.discipline ?? 3,
       note: m.note ?? "", images: m.images || (m.image ? [m.image] : []),
+      smc: { ...empty.smc, ...(m.smc || {}) },
     };
+  }
+  function toggleSmc(id) {
+    setForm((f) => ({ ...f, smc: { ...f.smc, [id]: !f.smc[id] } }));
+  }
+  function setSmc(id, value) {
+    setForm((f) => ({ ...f, smc: { ...f.smc, [id]: value } }));
   }
 
   async function handleImages(e) {
@@ -2862,6 +2916,70 @@ function FxMarketJournal({ market, setMarket }) {
           <Field label={`Kỷ luật tuân thủ kế hoạch (${form.discipline}/5)`}>
             <input type="range" min={1} max={5} value={form.discipline} onChange={(e) => setForm({ ...form, discipline: Number(e.target.value) })} className="w-full accent-amber-400" />
           </Field>
+        </div>
+
+        <div className="mb-4">
+          <div className="text-xs text-slate-500 mb-2">Phương pháp quan sát thị trường — Quét thanh khoản + Nến rút râu</div>
+          <div className="space-y-1.5">
+            <StepToggle
+              title="Xác định cấu trúc"
+              hint="Xu hướng chính trên khung lớn hôm nay: HH-HL (tăng) hay LH-LL (giảm)"
+              checked={form.smc.structure}
+              onToggle={() => toggleSmc("structure")}
+              size="small"
+            />
+            <div className="px-4 py-3 rounded-lg" style={{ background: "#0a0e14", border: "1px solid #1c2432" }}>
+              <div className="text-sm text-slate-200 font-medium mb-1.5">Quét thanh khoản — Buy-side / Sell-side liquidity</div>
+              <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "#263042" }}>
+                <button
+                  onClick={() => setSmc("liquiditySide", "buy_side")}
+                  className="flex-1 text-xs font-medium py-2"
+                  style={{ background: form.smc.liquiditySide === "buy_side" ? "#f8717122" : "transparent", color: form.smc.liquiditySide === "buy_side" ? "#f87171" : "#64748b" }}
+                >
+                  Buy-side liquidity (quét đỉnh)
+                </button>
+                <button
+                  onClick={() => setSmc("liquiditySide", "sell_side")}
+                  className="flex-1 text-xs font-medium py-2"
+                  style={{ background: form.smc.liquiditySide === "sell_side" ? "#34d39922" : "transparent", color: form.smc.liquiditySide === "sell_side" ? "#34d399" : "#64748b" }}
+                >
+                  Sell-side liquidity (quét đáy)
+                </button>
+              </div>
+            </div>
+            <StepToggle
+              title="Đã có Sweep? (giá đã quét thanh khoản)"
+              checked={form.smc.sweepDone}
+              onToggle={() => toggleSmc("sweepDone")}
+              size="small"
+            />
+            <div className="px-4 py-3 rounded-lg" style={{ background: "#0a0e14", border: "1px solid #1c2432" }}>
+              <div className="text-sm text-slate-200 font-medium mb-1.5">Nến rút râu trên M15 · H1 · H4</div>
+              <div className="text-[11px] text-slate-500 mb-2">Sau khi quét thanh khoản, chờ 1 cây nến rút râu rồi vào lệnh ở cây tiếp theo</div>
+              <div className="flex rounded-md overflow-hidden border mb-2.5" style={{ borderColor: "#263042" }}>
+                {["M15", "H1", "H4"].map((tf) => (
+                  <button
+                    key={tf}
+                    onClick={() => setSmc("entryTimeframe", tf)}
+                    className="flex-1 text-xs font-medium py-2"
+                    style={{ background: form.smc.entryTimeframe === tf ? "#fbbf2422" : "transparent", color: form.smc.entryTimeframe === tf ? "#fbbf24" : "#64748b" }}
+                  >
+                    {tf}
+                  </button>
+                ))}
+              </div>
+              <StepToggle
+                title={`Có nến rút râu xác nhận trên ${form.smc.entryTimeframe}`}
+                checked={form.smc.wickRejection}
+                onToggle={() => toggleSmc("wickRejection")}
+                size="small"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <StepToggle title="Có FVG (Fair Value Gap)" checked={form.smc.fvg} onToggle={() => toggleSmc("fvg")} size="small" />
+              <StepToggle title="Có OB (Order Block)" checked={form.smc.ob} onToggle={() => toggleSmc("ob")} size="small" />
+            </div>
+          </div>
         </div>
 
         <div className="mt-3">
@@ -2957,6 +3075,16 @@ function FxMarketJournal({ market, setMarket }) {
                           </button>
                           {dayOpen && (
                             <div className="p-3.5" style={{ borderTop: "1px solid #1c2432" }}>
+                              {m.smc && (m.smc.structure || m.smc.liquiditySide || m.smc.sweepDone || m.smc.wickRejection || m.smc.fvg || m.smc.ob) && (
+                                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                                  {m.smc.structure && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>Đã xác định cấu trúc</span>}
+                                  {m.smc.liquiditySide && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: m.smc.liquiditySide === "buy_side" ? "#f8717122" : "#34d39922", color: m.smc.liquiditySide === "buy_side" ? "#f87171" : "#34d399" }}>{m.smc.liquiditySide === "buy_side" ? "Buy-side liquidity" : "Sell-side liquidity"}</span>}
+                                  {m.smc.sweepDone && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "#fbbf2422", color: "#fbbf24" }}>Đã Sweep</span>}
+                                  {m.smc.wickRejection && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>Rút râu {m.smc.entryTimeframe}</span>}
+                                  {m.smc.fvg && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>FVG</span>}
+                                  {m.smc.ob && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "#1a2130", color: "#94a3b8" }}>OB</span>}
+                                </div>
+                              )}
                               {m.plan && (
                                 <div className="mb-2">
                                   <div className="text-[11px] text-amber-400 font-medium mb-1">Kế hoạch giao dịch</div>
