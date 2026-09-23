@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   LayoutDashboard, Eye, Target, BookOpen, Brain, Plus, Trash2,
   TrendingUp, TrendingDown, Upload, X, ChevronLeft, ChevronRight,
@@ -162,7 +162,7 @@ const NAV = [
   { id: "crm", label: "CRM Khách hàng", icon: Users },
 ];
 
-export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmin }) {
+function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTab, forcedNavToken }) {
   const [tab, setTab] = useState("dashboard");
   const [loading, setLoading] = useState(true);
 
@@ -226,6 +226,11 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
       setLoading(false);
     })();
   }, []);
+
+  // Cho phép Hub (vòng tròn AI) điều hướng thẳng vào 1 tab, kể cả khi bấm cùng 1 tab nhiều lần
+  useEffect(() => {
+    if (forcedTab) setTab(forcedTab);
+  }, [forcedTab, forcedNavToken]);
 
   const persist = useCallback((key, setter) => (updater) => {
     setter((prev) => {
@@ -4605,6 +4610,431 @@ function ChartView() {
           Mã cần đúng định dạng SÀN:MÃ theo TradingView — VD: <span className="font-data">HOSE:HPG</span> (chứng khoán VN), <span className="font-data">OANDA:XAUUSD</span> (vàng), <span className="font-data">BINANCE:BTCUSDT</span> (crypto), <span className="font-data">FX:EURUSD</span> (forex). Nếu không hiện biểu đồ, thử đổi sàn (HOSE/HNX/UPCOM) hoặc kiểm tra đúng chính tả mã.
         </div>
       </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   HOÀNG ĐỊA KIM — HUB điều khiển bằng giọng nói
+   Bọc quanh TradingSystemCore ở trên: màn hình chính là vòng tròn AI,
+   nói tên 1 mục (hoặc bấm vào node) sẽ nhảy thẳng vào đúng tab đó.
+========================================================================= */
+
+const HUB_CSS = `
+  #hdk-hub-root{ position:relative; width:100%; height:100vh; min-height:640px; overflow:hidden;
+    background: radial-gradient(ellipse at 50% 20%, #0d1530 0%, #060a14 55%, #030509 100%); color:#e9edf6;
+    font-family:'Manrope', sans-serif; }
+  #hdk-hub-root *{ box-sizing:border-box; }
+  .hdk-brand{ position:absolute; top:22px; left:26px; z-index:20; display:flex; align-items:center; gap:12px; }
+  .hdk-brand img{ width:42px; height:42px; object-fit:contain; border-radius:50%; filter: drop-shadow(0 0 10px rgba(217,180,92,0.5)); }
+  .hdk-brand .mark{ font-family:'Georgia', serif; font-weight:600; font-size:22px; letter-spacing:0.04em; color:#f3d98a; display:block; }
+  .hdk-brand .sub{ font-size:11px; color:#8b93a8; letter-spacing:0.03em; }
+  .hdk-toggle{ position:absolute; top:24px; right:26px; z-index:20; display:flex; align-items:center; gap:8px;
+    background: rgba(255,255,255,0.04); border:1px solid rgba(217,180,92,0.18); border-radius:999px; padding:3px; backdrop-filter: blur(6px); }
+  .hdk-toggle button{ appearance:none; border:none; background:transparent; cursor:pointer; color:#8b93a8; font-family:'Manrope',sans-serif;
+    font-size:12.5px; padding:7px 16px; border-radius:999px; transition:all .25s ease; }
+  .hdk-toggle button.active{ background: linear-gradient(135deg, #d9b45c, #b8863a); color:#17110a; font-weight:600; }
+  #hdk-network{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    transition: opacity .6s ease, transform .6s ease, filter .6s ease; }
+  #hdk-network-wrap{ position:relative; width:min(92vw,720px); height:min(92vw,720px); }
+  #hdk-network svg.lines{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+  #hdk-network svg.lines path{ fill:none; stroke:rgba(217,180,92,0.18); stroke-width:1; }
+  .hdk-watermark{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:340px; height:340px; object-fit:contain;
+    opacity:0.05; pointer-events:none; filter:grayscale(1) brightness(1.4); }
+  .hdk-core{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:150px; height:150px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:1; }
+  .hdk-core .ring{ position:absolute; inset:0; border-radius:50%; border:1.5px solid #d9b45c; opacity:0.55; animation: hdk-pulse 3.2s ease-in-out infinite; }
+  .hdk-core .ring.r2{ inset:-18px; opacity:0.28; animation-delay:.4s; border-color:#3fd6e8; }
+  .hdk-core .ring.r3{ inset:-36px; opacity:0.14; animation-delay:.8s; }
+  .hdk-core .glow{ position:absolute; inset:14px; border-radius:50%;
+    background: radial-gradient(circle at 40% 35%, #f3d98a, #d9b45c 45%, #7a5a22 78%, transparent 100%);
+    box-shadow: 0 0 60px 6px rgba(217,180,92,0.45), inset 0 0 30px rgba(0,0,0,0.35); animation: hdk-breathe 3.2s ease-in-out infinite; }
+  .hdk-core .label{ position:relative; z-index:2; font-family:'Georgia', serif; font-weight:700; font-size:15px; color:#1a1206; letter-spacing:0.06em; }
+  @keyframes hdk-pulse{ 0%,100%{transform:scale(1); opacity:.5;} 50%{transform:scale(1.06); opacity:.18;} }
+  @keyframes hdk-breathe{ 0%,100%{transform:scale(1);} 50%{transform:scale(1.045);} }
+  .hdk-node{ position:absolute; transform:translate(-50%,-50%); display:flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
+  .hdk-node .dot{ width:9px; height:9px; border-radius:50%; background:#3fd6e8; box-shadow:0 0 10px 2px rgba(63,214,232,0.7); flex-shrink:0; }
+  .hdk-node.gold .dot{ background:#f3d98a; box-shadow:0 0 10px 2px rgba(243,217,138,0.7); }
+  .hdk-node .txt{ font-size:12.5px; color:#e9edf6; white-space:nowrap; opacity:0.88; }
+  .hdk-node:hover .txt{ color:#f3d98a; opacity:1; }
+  .hdk-node:hover .dot{ transform:scale(1.3); }
+  .hdk-node.flip{ flex-direction:row-reverse; }
+  #hdk-face{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none;
+    transition: opacity .6s ease, transform .6s ease, filter .6s ease; transform:scale(0.96); filter:blur(6px); }
+  #hdk-face canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #hdk-hub-root.hdk-face-active #hdk-face{ opacity:1; pointer-events:auto; transform:scale(1); filter:blur(0px); }
+  #hdk-hub-root.hdk-face-active #hdk-network{ opacity:0; pointer-events:none; transform:scale(1.05); filter:blur(6px); }
+  .hdk-controlbar{ position:absolute; bottom:30px; left:50%; transform:translateX(-50%); z-index:20; display:flex; align-items:center; gap:14px; }
+  .hdk-pill{ display:flex; align-items:center; gap:8px; background:rgba(12,17,32,0.78); border:1px solid rgba(217,180,92,0.18); border-radius:999px;
+    padding:10px 18px; font-size:12.5px; color:#8b93a8; backdrop-filter: blur(8px); }
+  .hdk-mic{ width:46px; height:46px; border-radius:50%; background: linear-gradient(135deg, #f3d98a, #d9b45c 60%, #8a6526);
+    border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 22px rgba(217,180,92,0.5); transition: box-shadow .3s ease; }
+  .hdk-mic.listening{ box-shadow:0 0 34px rgba(63,214,232,0.65); background: linear-gradient(135deg, #3fd6e8, #1a8fa0 70%); }
+  .hdk-mic svg{ width:18px; height:18px; }
+  .hdk-status-dot{ width:6px; height:6px; border-radius:50%; background:#8b93a8; display:inline-block; margin-right:6px; }
+  .hdk-listening .hdk-status-dot{ background:#3fd6e8; box-shadow:0 0 6px #3fd6e8; }
+  #hdk-panel{ position:absolute; top:90px; right:26px; z-index:25; width:250px; background:rgba(12,17,32,0.78); border:1px solid rgba(217,180,92,0.18);
+    border-radius:16px; padding:18px; backdrop-filter: blur(10px); }
+  #hdk-panel .p-title{ font-family:'Georgia', serif; font-weight:600; font-size:19px; color:#f3d98a; margin-bottom:6px; }
+  #hdk-panel .p-desc{ font-size:12.5px; line-height:1.55; color:#8b93a8; }
+  #hdk-panel .p-close{ position:absolute; top:12px; right:14px; cursor:pointer; color:#8b93a8; font-size:16px; background:none; border:none; }
+  #hdk-chatlog{ position:absolute; bottom:96px; left:50%; transform:translateX(-50%); width:min(92vw,440px); max-height:210px;
+    overflow-y:auto; z-index:20; display:flex; flex-direction:column; gap:8px; padding:6px 2px; }
+  #hdk-chatlog .msg{ max-width:84%; padding:8px 13px; border-radius:14px; font-size:12.5px; line-height:1.5;
+    background:rgba(12,17,32,0.78); border:1px solid rgba(217,180,92,0.18); backdrop-filter: blur(8px); }
+  #hdk-chatlog .msg.user{ align-self:flex-end; color:#e9edf6; border-color: rgba(217,180,92,0.35); }
+  #hdk-chatlog .msg.ai{ align-self:flex-start; color:#8b93a8; }
+  #hdk-chatlog .msg.ai b{ color:#f3d98a; font-weight:600; }
+  #hdk-app-view .hdk-float-bar{ position:fixed; top:10px; right:14px; z-index:9999; display:flex; align-items:center; gap:8px; }
+  .hdk-back-btn{ display:flex; align-items:center; gap:6px; background: rgba(10,14,24,0.85); border:1px solid rgba(217,180,92,0.35);
+    color:#f3d98a; font-family:'Manrope',sans-serif; font-size:12px; font-weight:600; padding:8px 14px; border-radius:999px; cursor:pointer;
+    backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+  .hdk-mic-sm{ width:38px; height:38px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    background: linear-gradient(135deg, #f3d98a, #d9b45c 60%, #8a6526); box-shadow:0 0 16px rgba(217,180,92,0.45); }
+  .hdk-mic-sm.listening{ background: linear-gradient(135deg, #3fd6e8, #1a8fa0 70%); box-shadow:0 0 22px rgba(63,214,232,0.6); }
+  .hdk-mic-sm svg{ width:15px; height:15px; }
+  .hdk-toast{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:9999;
+    background: rgba(10,14,24,0.92); border:1px solid rgba(217,180,92,0.35); color:#e9edf6; font-size:12.5px; padding:9px 16px;
+    border-radius:999px; box-shadow:0 6px 18px rgba(0,0,0,0.4); max-width:88vw; text-align:center; }
+`;
+
+// Mô tả + từ khoá nhận diện giọng nói cho từng tab thật của hệ thống
+const NAV_MEDIA = {
+  dashboard:  { desc: "Bức tranh tổng thể: hiệu suất, tỷ lệ thắng, kỷ luật và danh mục theo dõi.", kw: /(tổng quan|trang chủ|dashboard|màn hình chính)/i },
+  watchlist:  { desc: "Theo dõi các mã đang quan tâm, ghi chú nhanh diễn biến giá.", kw: /(danh mục theo dõi|watchlist|theo dõi mã)/i },
+  performance:{ desc: "Thống kê lãi lỗ, tỷ lệ thắng và các chỉ số hiệu suất giao dịch.", kw: /(hiệu suất|performance|thống kê giao dịch)/i },
+  plan:       { desc: "Mục tiêu, phân bổ vốn và nguyên tắc đầu tư của bạn.", kw: /(kế hoạch đầu tư|kế hoạch|plan đầu tư)/i },
+  journal:    { desc: "Ghi lại từng lệnh mua bán kèm lý do vào lệnh và kết quả.", kw: /(nhật ký giao dịch|sổ giao dịch|journal giao dịch)/i },
+  market:     { desc: "Theo dõi diễn biến thị trường và trạng thái tâm lý khi giao dịch.", kw: /(nhật ký thị trường|tâm lý giao dịch|tâm lý thị trường)/i },
+  crm:        { desc: "Quản lý thông tin và chăm sóc khách hàng của bạn.", kw: /(khách hàng|crm)/i },
+};
+const BACK_KW = /(quay lại|trở về|về (vòng tròn|trang) ai|trang chủ ai|đóng hệ thống)/i;
+
+function hdkPolar(cx, cy, r, deg){
+  const rad = (deg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function HdkMicIcon(){
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1a1206" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" fill="#1a1206" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  );
+}
+
+function HdkNetworkView({ onNodeClick, onCoreClick }){
+  const size = 720;
+  const cx = size / 2, cy = size / 2;
+  const n = NAV.length;
+  const radii = [258, 232, 268, 240, 262, 236, 256];
+  const pts = NAV.map((item, i) => {
+    const angle = (360 / n) * i;
+    const r = radii[i % radii.length];
+    const p = hdkPolar(cx, cy, r, angle);
+    return { ...item, x: p.x, y: p.y };
+  });
+  return (
+    <div id="hdk-network">
+      <div id="hdk-network-wrap">
+        <svg className="lines" viewBox={`0 0 ${size} ${size}`}>
+          {pts.map((p) => (<path key={p.id} d={`M ${cx} ${cy} L ${p.x} ${p.y}`} />))}
+        </svg>
+        <img className="hdk-watermark" src={LOGO_URI} alt="" />
+        {pts.map((p, i) => {
+          const isRight = p.x > cx;
+          const gold = i % 2 === 0;
+          return (
+            <div
+              key={p.id}
+              className={"hdk-node " + (gold ? "gold" : "") + (isRight ? "" : " flip")}
+              style={{ left: (p.x / size) * 100 + "%", top: (p.y / size) * 100 + "%" }}
+              onClick={() => onNodeClick(p.id)}
+              title={NAV_MEDIA[p.id] ? NAV_MEDIA[p.id].desc : ""}
+            >
+              <span className="dot" />
+              <span className="txt">{p.label}</span>
+            </div>
+          );
+        })}
+        <div className="hdk-core" onClick={onCoreClick}>
+          <div className="ring r1" /><div className="ring r2" /><div className="ring r3" />
+          <div className="glow" />
+          <span className="label">HOÀNG ĐỊA KIM</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HdkFaceView({ uiState }){
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let raf, t = 0;
+    function resize(){ canvas.width = canvas.clientWidth * devicePixelRatio; canvas.height = canvas.clientHeight * devicePixelRatio; }
+    resize();
+    window.addEventListener('resize', resize);
+    function draw(){
+      t += 0.02;
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2, cy = h / 2;
+      const baseR = Math.min(w, h) * 0.16;
+      const speed = uiState === 'listening' ? 2.4 : uiState === 'thinking' ? 3.4 : uiState === 'speaking' ? 1.6 : 1;
+      const pulse = Math.sin(t * speed) * (uiState === 'idle' ? 3 : 8);
+      const color = uiState === 'listening' ? '#3fd6e8' : uiState === 'thinking' ? '#a855f7' : '#f3d98a';
+
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, baseR * 2.1 + i * 34 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = color; ctx.globalAlpha = 0.16 - i * 0.04; ctx.lineWidth = 1.4; ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      const rayCount = uiState === 'idle' ? 10 : 16;
+      const rayInner = baseR * 1.55;
+      const rayOuterBase = baseR * (uiState === 'idle' ? 2.5 : 3.1);
+      const rotSpeed = uiState === 'listening' ? 0.9 : uiState === 'thinking' ? 1.6 : uiState === 'speaking' ? 0.6 : 0.28;
+      const rotDir = uiState === 'thinking' ? -1 : 1;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * rotSpeed * rotDir);
+      for (let i = 0; i < rayCount; i++) {
+        const ang = (Math.PI * 2 * i) / rayCount;
+        const flicker = 0.45 + 0.55 * Math.abs(Math.sin(t * (2.2 + (i % 5) * 0.35) + i));
+        const len = rayOuterBase * (0.7 + 0.3 * Math.sin(t * 1.8 + i * 1.3));
+        const x1 = Math.cos(ang) * rayInner, y1 = Math.sin(ang) * rayInner;
+        const x2 = Math.cos(ang) * len, y2 = Math.sin(ang) * len;
+        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.strokeStyle = grad; ctx.lineWidth = (uiState === 'idle' ? 1.1 : 1.8) * (0.6 + flicker * 0.6);
+        ctx.globalAlpha = flicker * (uiState === 'idle' ? 0.35 : 0.6);
+        ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.stroke();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1; ctx.restore();
+
+      const sparkCount = 9;
+      for (let i = 0; i < sparkCount; i++) {
+        const seed = i * 2.399963;
+        const speedVar = 0.7 + (i % 4) * 0.22;
+        const sAng = seed + t * rotSpeed * rotDir * -1.1 * speedVar;
+        const radiusVar = 0.82 + (i % 3) * 0.22;
+        const sR = rayOuterBase * radiusVar + Math.sin(t * (1.3 + i * 0.17) + i * 3) * baseR * 0.16;
+        const sx = cx + Math.cos(sAng) * sR, sy = cy + Math.sin(sAng) * sR;
+        const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(t * (2.1 + i * 0.31) + i * 5));
+        ctx.beginPath(); ctx.arc(sx, sy, baseR * (0.035 + 0.03 * twinkle), 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 12;
+        ctx.globalAlpha = 0.45 + twinkle * 0.4; ctx.fill();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+      const eyeOffsetX = baseR * 1.15;
+      const eyeY = cy - baseR * 0.15;
+      const blink = uiState === 'thinking' ? (Math.sin(t * 6) > 0.85 ? 0.15 : 1) : 1;
+      [-1, 1].forEach((side) => {
+        ctx.beginPath();
+        ctx.ellipse(cx + side * eyeOffsetX, eyeY, baseR * 0.22, baseR * 0.22 * blink, 0, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(cx + side * eyeOffsetX, eyeY, 2, cx + side * eyeOffsetX, eyeY, baseR * 0.22);
+        grad.addColorStop(0, '#fff7e0'); grad.addColorStop(1, color);
+        ctx.fillStyle = grad; ctx.shadowColor = color; ctx.shadowBlur = 22; ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+
+      const mouthY = cy + baseR * 0.65;
+      const mouthW = baseR * (uiState === 'speaking' ? 1.1 + Math.sin(t * 8) * 0.25 : 0.9);
+      const mouthH = uiState === 'speaking' ? baseR * (0.18 + Math.abs(Math.sin(t * 8)) * 0.22) : baseR * 0.1;
+      ctx.beginPath(); ctx.ellipse(cx, mouthY, mouthW, mouthH, 0, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+
+      raf = requestAnimationFrame(draw);
+    }
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+  }, [uiState]);
+  return (<div id="hdk-face"><canvas ref={canvasRef} /></div>);
+}
+
+function useHdkSpeech({ lang, onResult, onStateChange }) {
+  const recRef = useRef(null);
+  const [listening, setListening] = useState(false);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = lang; rec.continuous = false; rec.interimResults = false;
+    rec.onresult = (e) => onResult(e.results[e.results.length - 1][0].transcript);
+    rec.onend = () => { setListening(false); onStateChange('idle'); };
+    rec.onerror = () => { setListening(false); onStateChange('idle'); };
+    recRef.current = rec;
+    return () => { try { rec.stop(); } catch (e) {} };
+  }, [lang]);
+
+  const start = useCallback(() => {
+    if (!recRef.current) return false;
+    try { recRef.current.lang = lang; recRef.current.start(); setListening(true); onStateChange('listening'); return true; }
+    catch (e) { return false; }
+  }, [lang]);
+  const stop = useCallback(() => { if (recRef.current) { try { recRef.current.stop(); } catch (e) {} } setListening(false); }, []);
+  const speak = useCallback((text, onDone) => {
+    if (!window.speechSynthesis) { if (onDone) onDone(); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang; u.rate = 1.02;
+    u.onend = () => { onStateChange('idle'); if (onDone) onDone(); };
+    onStateChange('speaking');
+    window.speechSynthesis.speak(u);
+  }, [lang]);
+
+  return { listening, start, stop, speak, supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition) };
+}
+
+// Component chính export ra ngoài — App.tsx dùng y nguyên như trước, không cần sửa gì
+export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmin }) {
+  const [view, setView] = useState('hub');
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [navToken, setNavToken] = useState(0);
+  const [faceActive, setFaceActive] = useState(false);
+  const [lang, setLang] = useState('vi-VN');
+  const [uiState, setUiState] = useState('idle');
+  const [messages, setMessages] = useState([]);
+  const [panel, setPanel] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const navigateTo = useCallback((tabId, label) => {
+    setActiveTab(tabId); setNavToken((t) => t + 1); setView('app'); setPanel(null);
+    if (label) { setToast(`Đã mở: ${label}`); setTimeout(() => setToast(null), 2200); }
+  }, []);
+
+  const pushMsg = useCallback((role, text) => {
+    setMessages((m) => [...m.slice(-7), { role, text, id: Date.now() + Math.random() }]);
+  }, []);
+
+  const executeCommand = useCallback((text) => {
+    pushMsg('user', text);
+    if (BACK_KW.test(text)) {
+      setView('hub'); setPanel(null);
+      const reply = "Đã quay lại vòng tròn Hoàng Địa Kim.";
+      pushMsg('ai', reply); speak(reply);
+      return;
+    }
+    for (const item of NAV) {
+      const media = NAV_MEDIA[item.id];
+      if (media && media.kw.test(text)) {
+        navigateTo(item.id, item.label);
+        const reply = `Đã mở ${item.label}.`;
+        pushMsg('ai', reply); speak(reply);
+        return;
+      }
+    }
+    const reply = "Mình chưa nhận ra lệnh này. Hãy thử nói tên một mục, ví dụ: \"Mở nhật ký giao dịch\" hoặc \"Kế hoạch đầu tư\".";
+    pushMsg('ai', reply); speak(reply);
+  }, [navigateTo, pushMsg]);
+
+  const { listening, start, stop, speak, supported } = useHdkSpeech({ lang, onResult: executeCommand, onStateChange: setUiState });
+
+  const toggleMic = useCallback(() => {
+    if (listening) { stop(); setUiState('idle'); }
+    else {
+      const ok = start();
+      if (!ok) { setToast('Trình duyệt này không hỗ trợ nhận diện giọng nói. Hãy dùng Chrome/Edge.'); setTimeout(() => setToast(null), 2600); }
+    }
+  }, [listening, start, stop]);
+
+  const onNodeClick = useCallback((tabId) => {
+    const item = NAV.find((n) => n.id === tabId);
+    if (item) navigateTo(tabId, item.label);
+  }, [navigateTo]);
+
+  const onCoreClick = useCallback(() => {
+    setPanel({
+      title: 'Hoàng Địa Kim',
+      desc: 'Trợ lý điều hướng hệ thống đầu tư bằng giọng nói. Bấm micro và nói tên mục bạn muốn mở, ví dụ "Mở nhật ký giao dịch".',
+    });
+  }, []);
+
+  if (view === 'app') {
+    return (
+      <div id="hdk-app-view">
+        <style>{HUB_CSS}</style>
+        <TradingSystemCore
+          forcedTab={activeTab}
+          forcedNavToken={navToken}
+          onLogout={onLogout}
+          userEmail={userEmail}
+          isAdmin={isAdmin}
+          onOpenAdmin={onOpenAdmin}
+        />
+        <div className="hdk-float-bar">
+          <button className={"hdk-mic-sm " + (listening ? "listening" : "")} onClick={toggleMic} title="Ra lệnh bằng giọng nói">
+            <HdkMicIcon />
+          </button>
+          <button className="hdk-back-btn" onClick={() => setView('hub')}>
+            <img src={LOGO_URI} alt="" style={{ width: 16, height: 16, borderRadius: '50%' }} />
+            Vòng tròn AI
+          </button>
+        </div>
+        {toast && <div className="hdk-toast">{toast}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div id="hdk-hub-root" className={faceActive ? "hdk-face-active" : ""}>
+      <style>{HUB_CSS}</style>
+      <div className="hdk-brand">
+        <img src={LOGO_URI} alt="Hoàng Địa Kim" />
+        <div>
+          <span className="mark">HOÀNG ĐỊA KIM</span>
+          <span className="sub">AI CỐ VẤN ĐẦU TƯ</span>
+        </div>
+      </div>
+
+      <div className="hdk-toggle">
+        <button className={!faceActive ? "active" : ""} onClick={() => setFaceActive(false)}>Mạng lưới</button>
+        <button className={faceActive ? "active" : ""} onClick={() => setFaceActive(true)}>Gương mặt</button>
+      </div>
+
+      <HdkNetworkView onNodeClick={onNodeClick} onCoreClick={onCoreClick} />
+      <HdkFaceView uiState={uiState} />
+
+      <div id="hdk-chatlog">
+        {messages.map((m) => (
+          <div key={m.id} className={"msg " + (m.role === 'user' ? "user" : "ai")}>
+            {m.role === 'ai' && <b>Hoàng Địa Kim: </b>}{m.text}
+          </div>
+        ))}
+      </div>
+
+      <div className="hdk-controlbar">
+        <div className="hdk-pill">
+          <span className={listening ? "hdk-listening" : ""}>
+            <span className="hdk-status-dot" />
+            {uiState === 'listening' ? 'Đang nghe...' : uiState === 'thinking' ? 'Đang xử lý...' : uiState === 'speaking' ? 'Đang trả lời...' : 'Sẵn sàng'}
+          </span>
+        </div>
+        <button className={"hdk-mic " + (listening ? "listening" : "")} onClick={toggleMic} title="Nhấn để nói lệnh">
+          <HdkMicIcon />
+        </button>
+      </div>
+
+      {panel && (
+        <div id="hdk-panel">
+          <button className="p-close" onClick={() => setPanel(null)}>×</button>
+          <div className="p-title">{panel.title}</div>
+          <div className="p-desc">{panel.desc}</div>
+        </div>
+      )}
+
+      {toast && <div className="hdk-toast">{toast}</div>}
+      {!supported && (
+        <div className="hdk-toast" style={{ bottom: 96 }}>
+          Trình duyệt chưa hỗ trợ nhận diện giọng nói — hãy dùng Chrome hoặc Edge trên máy tính/Android.
+        </div>
+      )}
     </div>
   );
 }
