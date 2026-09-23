@@ -5,7 +5,8 @@ import {
   Flame, ShieldCheck, AlertTriangle, ImageOff, Pencil, Download,
   CalendarDays, Check, ChevronDown, ChevronUp, Phone, MessageCircle,
   Send, Mail, Share2, Copy, Youtube, Music2, Compass, Layers, Gauge, Sparkles,
-  Activity, Bell, BellRing, FileSpreadsheet, Printer, Users, UserPlus, Clock, Filter, BarChart3
+  Activity, Bell, BellRing, FileSpreadsheet, Printer, Users, UserPlus, Clock, Filter, BarChart3,
+  DollarSign, Coins, Bitcoin, Fuel
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
@@ -27,6 +28,7 @@ const K = {
   psych: "ts:psychology",
   market: "ts:market-journal",
   marketFx: "ts:market-journal-fx",
+  planFx: "ts:plan-fx",
   stockLogs: "ts:stock-logs",
   profile: "ts:profile",
   screener: "ts:screener",
@@ -172,6 +174,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
   const [psych, setPsych] = useState({});
   const [market, setMarket] = useState([]);
   const [marketFx, setMarketFx] = useState([]);
+  const [planFx, setPlanFx] = useState({ goal: "", targetMonthlyReturn: "", maxDrawdown: "", riskPerTrade: "", monthly: [], weekly: [], daily: [] });
   const [stockLogs, setStockLogs] = useState({});
   const [profile, setProfile] = useState({ name: "", title: "Môi giới chứng khoán", phone: "", zalo: "", facebook: "", telegram: "", email: "", youtube: "", tiktok: "" });
   const [screener, setScreener] = useState([]);
@@ -182,7 +185,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
 
   useEffect(() => {
     (async () => {
-      const [w, p, j, ps, mk, sl, pf, sc, jg, gc, jf, cr, mfx] = await Promise.all([
+      const [w, p, j, ps, mk, sl, pf, sc, jg, gc, jf, cr, mfx, pfx] = await Promise.all([
         loadKey(K.watchlist, []),
         loadKey(K.plan, { goal: "", capital: "", allocations: [], rules: [] }),
         loadKey(K.journal, []),
@@ -196,6 +199,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
         loadKey(K.journalForex, []),
         loadKey(K.crm, []),
         loadKey(K.marketFx, []),
+        loadKey(K.planFx, { goal: "", targetMonthlyReturn: "", maxDrawdown: "", riskPerTrade: "", monthly: [], weekly: [], daily: [] }),
       ]);
       let mergedMarket = mk;
       if (ps && Object.keys(ps).length > 0) {
@@ -222,7 +226,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
         saveKey(K.journalGold, mergedGoldJournal);
         saveKey(K.journalForex, []);
       }
-      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc); setJournalGold(mergedGoldJournal); setGoldCapital(gc); setJournalForex([]); setCrm(cr); setMarketFx(mfx);
+      setWatchlist(w); setPlan(p); setJournal(j); setPsych({}); setMarket(mergedMarket); setStockLogs(sl); setProfile(pf); setScreener(sc); setJournalGold(mergedGoldJournal); setGoldCapital(gc); setJournalForex([]); setCrm(cr); setMarketFx(mfx); setPlanFx(pfx);
       setLoading(false);
     })();
   }, []);
@@ -246,6 +250,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
   const setPsychP = persist(K.psych, setPsych);
   const setMarketP = persist(K.market, setMarket);
   const setMarketFxP = persist(K.marketFx, setMarketFx);
+  const setPlanFxP = persist(K.planFx, setPlanFx);
   const setStockLogsP = persist(K.stockLogs, setStockLogs);
   const setProfileP = persist(K.profile, setProfile);
   const setScreenerP = persist(K.screener, setScreener);
@@ -389,7 +394,7 @@ function TradingSystemCore({ onLogout, userEmail, isAdmin, onOpenAdmin, forcedTa
           {tab === "dashboard" && <Dashboard stats={stats} journal={journal} journalGold={journalGold} market={market} watchlist={watchlist} profile={profile} setProfile={setProfileP} screener={screener} />}
           {tab === "watchlist" && <Watchlist watchlist={watchlist} setWatchlist={setWatchlistP} stockLogs={stockLogs} setStockLogs={setStockLogsP} />}
           {tab === "performance" && <PerformanceStats journal={journal} journalGold={journalGold} />}
-          {tab === "plan" && <PlanView plan={plan} setPlan={setPlanP} />}
+          {tab === "plan" && <PlanView plan={plan} setPlan={setPlanP} planFx={planFx} setPlanFx={setPlanFxP} />}
           {tab === "journal" && <Journal journal={journal} setJournal={setJournalP} journalGold={journalGold} setJournalGold={setJournalGoldP} goldCapital={goldCapital} setGoldCapital={setGoldCapitalP} />}
           {tab === "market" && <MarketJournal market={market} setMarket={setMarketP} marketFx={marketFx} setMarketFx={setMarketFxP} />}
           {tab === "crm" && <CRM crm={crm} setCrm={setCrmP} />}
@@ -1232,7 +1237,7 @@ function StockDetailPanel({ stock, logs, setStockLogs, onUpdateStock }) {
 /* ---------------------------------------------------------
    PLAN
 --------------------------------------------------------- */
-function PlanView({ plan, setPlan }) {
+function StockPlanView({ plan, setPlan }) {
   const [newAlloc, setNewAlloc] = useState({ sector: "", percent: "" });
   const [newRule, setNewRule] = useState("");
 
@@ -1255,9 +1260,7 @@ function PlanView({ plan, setPlan }) {
   const totalPct = (plan.allocations || []).reduce((s, a) => s + Number(a.percent || 0), 0);
 
   return (
-    <div>
-      <PageHeader title="Kế hoạch đầu tư" sub="Định hình mục tiêu, phân bổ vốn theo ngành và nguyên tắc giao dịch của riêng bạn." />
-      <div className="px-6 md:px-10 grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card className="p-5">
           <div className="text-sm font-semibold text-slate-300 mb-4">Mục tiêu & vốn</div>
           <div className="space-y-3">
@@ -1312,7 +1315,326 @@ function PlanView({ plan, setPlan }) {
             <Btn variant="ghost" onClick={addRule}><Plus size={14} /></Btn>
           </div>
         </Card>
+    </div>
+  );
+}
+
+function PlanView({ plan, setPlan, planFx, setPlanFx }) {
+  const [subTab, setSubTab] = useState("stock"); // "stock" | "fx"
+  return (
+    <div>
+      <PageHeader title="Kế hoạch đầu tư" sub="Định hình mục tiêu, phân bổ vốn theo ngành và nguyên tắc giao dịch của riêng bạn." />
+      <div className="px-6 md:px-10">
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            onClick={() => setSubTab("stock")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "stock" ? { background: "linear-gradient(90deg,#7c3aed,#a855f7)", color: "#fff" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <Target size={15} /> Chứng khoán
+          </button>
+          <button
+            onClick={() => setSubTab("fx")}
+            className="px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
+            style={subTab === "fx" ? { background: "linear-gradient(90deg,#f59e0b,#fbbf24)", color: "#1a1206" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+          >
+            <Flame size={15} /> Forex · Vàng · Dầu · BTC
+          </button>
+        </div>
+        {subTab === "stock" && <StockPlanView plan={plan} setPlan={setPlan} />}
+        {subTab === "fx" && <FxPlanView planFx={planFx} setPlanFx={setPlanFx} />}
       </div>
+    </div>
+  );
+}
+
+function weekRangeLabel(startStr) {
+  if (!startStr) return "";
+  const start = new Date(startStr);
+  if (isNaN(start.getTime())) return "";
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const fmt = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `${fmt(start)} → ${fmt(end)}`;
+}
+
+function FxPlanEntryEditor({ granularity, entries, setEntries }) {
+  // granularity: "month" | "week" | "day"
+  const isMonth = granularity === "month";
+  const isWeek = granularity === "week";
+  const todayKey = isMonth ? todayISO().slice(0, 7) : todayISO();
+  const empty = { date: todayKey, note: "", images: [] };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const [openMonths, setOpenMonths] = useState({});
+  const [openDates, setOpenDates] = useState({});
+
+  async function handleImages(e) {
+    const files = Array.from(e.target.files || []).slice(0, 4 - form.images.length);
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const urls = await Promise.all(files.map((f) => compressImage(f, 640, 0.75)));
+      setForm((f) => ({ ...f, images: [...f.images, ...urls].slice(0, 4) }));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function removeImage(idx) {
+    setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== idx) }));
+  }
+  function save() {
+    if (!form.date) return;
+    if (editingId) {
+      setEntries((prev) => prev.map((x) => (x.id === editingId ? { ...form, id: editingId } : x)));
+    } else {
+      setEntries((prev) => [{ id: Date.now(), ...form }, ...prev]);
+    }
+    cancelEdit();
+  }
+  function startEdit(x) {
+    setEditingId(x.id);
+    setForm({ date: x.date, note: x.note || "", images: x.images || [] });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(empty);
+  }
+  function remove(id) {
+    setEntries((prev) => prev.filter((x) => x.id !== id));
+    if (editingId === id) cancelEdit();
+  }
+
+  const dateLabel = isMonth ? "Tháng kế hoạch" : isWeek ? "Tuần bắt đầu từ (Thứ 2)" : "Ngày kế hoạch";
+  const placeholder = isMonth
+    ? "Kế hoạch tháng này: mục tiêu lợi nhuận, số lệnh dự kiến, cặp tiền/hàng hóa ưu tiên theo dõi, sự kiện vĩ mô quan trọng..."
+    : isWeek
+    ? "Kế hoạch tuần này: vùng giá quan trọng cần theo dõi, kịch bản Long/Short dự kiến, tin tức sắp ra..."
+    : "Kế hoạch hôm nay: vùng thanh khoản cần theo dõi, khung giờ giao dịch, kịch bản vào lệnh dự kiến...";
+
+  function renderEntryCard(x) {
+    return (
+      <Card key={x.id} className="p-3.5">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-sm font-semibold text-amber-300">
+            {isMonth ? formatMonthLabel(x.date) : isWeek ? `Tuần ${weekRangeLabel(x.date)}` : formatDayLabel(x.date)}
+          </span>
+          <div className="flex gap-3">
+            <button onClick={() => startEdit(x)} className="text-slate-500 hover:text-amber-400"><Pencil size={14} /></button>
+            <button onClick={() => remove(x.id)} className="text-slate-500 hover:text-red-400"><Trash2 size={14} /></button>
+          </div>
+        </div>
+        {x.note && <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{x.note}</div>}
+        {(x.images || []).length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+            {x.images.map((img, idx) => (
+              <div
+                key={idx}
+                className="rounded-md overflow-hidden border cursor-pointer relative group"
+                style={{ borderColor: "#263042", background: "#000", height: 120 }}
+                onClick={() => setLightbox({ image: img, caption: x.date })}
+              >
+                <img src={img} alt={`${x.date} ảnh ${idx + 1}`} className="w-full h-full object-contain" />
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(10,14,20,0.5)" }}>
+                  <Sparkles size={14} className="text-amber-300" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <Card className="p-4 mb-4">
+        {editingId ? (
+          <div className="text-xs text-amber-400 mb-3 flex items-center gap-2">
+            <Pencil size={12} /> Đang chỉnh sửa — <button onClick={cancelEdit} className="underline text-slate-500">hủy</button>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 mb-3">{dateLabel}</div>
+        )}
+        <Input type={isMonth ? "month" : "date"} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="mb-3" />
+        <Textarea rows={3} placeholder={placeholder} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} style={{ color: "#f1f5f9" }} />
+        <div className="mt-3">
+          <div className="text-xs text-slate-400 mb-2 font-medium">Ảnh minh họa (tối đa 4 ảnh)</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {form.images.map((img, idx) => (
+              <div key={idx} className="relative rounded-md overflow-hidden border" style={{ borderColor: "#263042", background: "#000", height: 100 }}>
+                <img src={img} alt={`ảnh ${idx + 1}`} className="w-full h-full object-contain" />
+                <button onClick={() => removeImage(idx)} className="absolute top-1 right-1 rounded-full p-1" style={{ background: "rgba(10,14,20,0.8)" }}>
+                  <X size={12} className="text-slate-300" />
+                </button>
+              </div>
+            ))}
+            {form.images.length < 4 && (
+              <label className="flex flex-col items-center justify-center gap-1.5 text-xs rounded-md cursor-pointer border border-dashed" style={{ borderColor: "#263042", height: 100, color: "#94a3b8" }}>
+                <Upload size={16} />
+                {busy ? "Đang tải..." : `Thêm ảnh (${form.images.length}/4)`}
+                <input type="file" accept="image/*" multiple onChange={handleImages} className="hidden" />
+              </label>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end mt-4">
+          <Btn onClick={save}>{editingId ? <><Check size={15} /> Lưu</> : <><Plus size={15} /> Thêm kế hoạch</>}</Btn>
+        </div>
+      </Card>
+
+      {entries.length === 0 ? (
+        <Card className="p-8"><EmptyHint text="Chưa có kế hoạch nào. Thêm kế hoạch đầu tiên ở trên." /></Card>
+      ) : isMonth ? (
+        <div className="space-y-2">
+          {entries.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((x) => renderEntryCard(x))}
+        </div>
+      ) : isWeek ? (
+        <div className="space-y-3">
+          {groupByMonth(entries).map(([monthKey, monthEntries], monthIdx) => {
+            const monthOpen = openMonths[monthKey] !== undefined ? openMonths[monthKey] : monthIdx === 0;
+            return (
+              <Card key={monthKey} className="overflow-hidden" style={{ borderColor: "#f59e0b40" }}>
+                <button
+                  onClick={() => setOpenMonths((p) => ({ ...p, [monthKey]: !monthOpen }))}
+                  className="w-full p-3.5 flex items-center justify-between text-left"
+                  style={{ background: "linear-gradient(90deg,#1a140a,#12161f)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {monthOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-amber-400" />}
+                    <span className="text-base">📁</span>
+                    <span className="text-sm font-bold text-amber-300">{formatMonthLabel(monthKey)}</span>
+                    <span className="text-xs text-slate-500">{monthEntries.length} tuần</span>
+                  </div>
+                </button>
+                {monthOpen && (
+                  <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                    {monthEntries.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((x) => renderEntryCard(x))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groupByMonth(entries).map(([monthKey, monthEntries], monthIdx) => {
+            const monthOpen = openMonths[monthKey] !== undefined ? openMonths[monthKey] : monthIdx === 0;
+            return (
+              <Card key={monthKey} className="overflow-hidden" style={{ borderColor: "#f59e0b40" }}>
+                <button
+                  onClick={() => setOpenMonths((p) => ({ ...p, [monthKey]: !monthOpen }))}
+                  className="w-full p-3.5 flex items-center justify-between text-left"
+                  style={{ background: "linear-gradient(90deg,#1a140a,#12161f)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {monthOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-amber-400" />}
+                    <span className="text-base">📁</span>
+                    <span className="text-sm font-bold text-amber-300">{formatMonthLabel(monthKey)}</span>
+                    <span className="text-xs text-slate-500">{monthEntries.length} ngày</span>
+                  </div>
+                </button>
+                {monthOpen && (
+                  <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                    {groupByDate(monthEntries).map(([dateKey, dayEntries]) => {
+                      const dayOpen = openDates[dateKey] !== false;
+                      return (
+                        <Card key={dateKey} className="overflow-hidden">
+                          <button
+                            onClick={() => setOpenDates((p) => ({ ...p, [dateKey]: !dayOpen }))}
+                            className="w-full p-3 flex items-center justify-between text-left"
+                            style={{ background: "#0d1119" }}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              {dayOpen ? <ChevronUp size={15} className="text-slate-500" /> : <ChevronDown size={15} className="text-slate-500" />}
+                              <span className="text-sm font-semibold text-amber-300">{formatDayLabel(dateKey)}</span>
+                            </div>
+                          </button>
+                          {dayOpen && (
+                            <div className="p-2 space-y-2" style={{ borderTop: "1px solid #1c2432" }}>
+                              {dayEntries.map((x) => renderEntryCard(x))}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+      <ImageLightbox image={lightbox?.image} caption={lightbox?.caption} onClose={() => setLightbox(null)} />
+    </div>
+  );
+}
+
+function FxPlanView({ planFx, setPlanFx }) {
+  const [section, setSection] = useState("month"); // "month" | "week" | "day"
+
+  function setMonthly(updater) {
+    setPlanFx((p) => ({ ...p, monthly: typeof updater === "function" ? updater(p.monthly || []) : updater }));
+  }
+  function setWeekly(updater) {
+    setPlanFx((p) => ({ ...p, weekly: typeof updater === "function" ? updater(p.weekly || []) : updater }));
+  }
+  function setDaily(updater) {
+    setPlanFx((p) => ({ ...p, daily: typeof updater === "function" ? updater(p.daily || []) : updater }));
+  }
+
+  return (
+    <div>
+      <Card className="p-5 mb-5">
+        <div className="text-sm font-semibold text-slate-300 mb-4">Mục tiêu Forex · Vàng · Dầu · BTC</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <Field label="Mục tiêu tổng quát">
+            <Textarea rows={3} value={planFx.goal} onChange={(e) => setPlanFx({ ...planFx, goal: e.target.value })} placeholder="VD: Tăng trưởng tài khoản ổn định, ưu tiên bảo toàn vốn, tuân thủ tuyệt đối phương pháp Quét thanh khoản + Nến rút râu..." />
+          </Field>
+          <div className="grid grid-cols-1 gap-3">
+            <Field label="Mục tiêu lợi nhuận/tháng (%)">
+              <Input value={planFx.targetMonthlyReturn} onChange={(e) => setPlanFx({ ...planFx, targetMonthlyReturn: e.target.value })} placeholder="VD: 10" />
+            </Field>
+            <Field label="Rủi ro tối đa/lệnh (%)">
+              <Input value={planFx.riskPerTrade} onChange={(e) => setPlanFx({ ...planFx, riskPerTrade: e.target.value })} placeholder="VD: 1" />
+            </Field>
+            <Field label="Drawdown tối đa chấp nhận (%)">
+              <Input value={planFx.maxDrawdown} onChange={(e) => setPlanFx({ ...planFx, maxDrawdown: e.target.value })} placeholder="VD: 10" />
+            </Field>
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button
+          onClick={() => setSection("month")}
+          className="px-4 py-2 rounded-md text-sm font-medium"
+          style={section === "month" ? { background: "linear-gradient(90deg,#f59e0b,#fbbf24)", color: "#1a1206" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+        >
+          Kế hoạch tháng
+        </button>
+        <button
+          onClick={() => setSection("week")}
+          className="px-4 py-2 rounded-md text-sm font-medium"
+          style={section === "week" ? { background: "linear-gradient(90deg,#f59e0b,#fbbf24)", color: "#1a1206" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+        >
+          Kế hoạch tuần
+        </button>
+        <button
+          onClick={() => setSection("day")}
+          className="px-4 py-2 rounded-md text-sm font-medium"
+          style={section === "day" ? { background: "linear-gradient(90deg,#f59e0b,#fbbf24)", color: "#1a1206" } : { background: "#0d1119", color: "#94a3b8", border: "1px solid #1c2432" }}
+        >
+          Kế hoạch ngày
+        </button>
+      </div>
+
+      {section === "month" && <FxPlanEntryEditor granularity="month" entries={planFx.monthly || []} setEntries={setMonthly} />}
+      {section === "week" && <FxPlanEntryEditor granularity="week" entries={planFx.weekly || []} setEntries={setWeekly} />}
+      {section === "day" && <FxPlanEntryEditor granularity="day" entries={planFx.daily || []} setEntries={setDaily} />}
     </div>
   );
 }
@@ -4627,8 +4949,9 @@ const HUB_CSS = `
   #hdk-hub-root *{ box-sizing:border-box; }
   .hdk-brand{ position:absolute; top:22px; left:26px; z-index:20; display:flex; align-items:center; gap:12px; }
   .hdk-brand img{ width:42px; height:42px; object-fit:contain; border-radius:50%; filter: drop-shadow(0 0 10px rgba(217,180,92,0.5)); }
-  .hdk-brand .mark{ font-family:'Georgia', serif; font-weight:600; font-size:22px; letter-spacing:0.04em; color:#f3d98a; display:block; }
-  .hdk-brand .sub{ font-size:11px; color:#8b93a8; letter-spacing:0.03em; }
+  .hdk-brand .mark{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:22px; letter-spacing:-0.01em; display:block;
+    background:linear-gradient(90deg,#fde68a,#fbbf24,#f59e0b); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .hdk-brand .sub{ font-family:'JetBrains Mono', monospace; font-size:11px; color:#94a3b8; letter-spacing:0.12em; }
   .hdk-toggle{ position:absolute; top:24px; right:26px; z-index:20; display:flex; align-items:center; gap:8px;
     background: rgba(255,255,255,0.04); border:1px solid rgba(217,180,92,0.18); border-radius:999px; padding:3px; backdrop-filter: blur(6px); }
   .hdk-toggle button{ appearance:none; border:none; background:transparent; cursor:pointer; color:#8b93a8; font-family:'Manrope',sans-serif;
