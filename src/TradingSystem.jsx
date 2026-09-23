@@ -4857,6 +4857,38 @@ function HdkFaceView({ uiState }){
   return (<div id="hdk-face"><canvas ref={canvasRef} /></div>);
 }
 
+// Gọi AI trả lời tự do bằng giọng nói (tiếng Việt) khi câu nói không khớp lệnh điều hướng nào
+async function askHdkAI(question, history) {
+  const navList = NAV.map((n) => `- ${n.label}`).join("\n");
+  const historyText = (history || [])
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "Người dùng" : "Hoàng Địa Kim"}: ${m.text}`)
+    .join("\n");
+
+  const systemPrompt = `Bạn là "Hoàng Địa Kim" — trợ lý AI cố vấn đầu tư (chứng khoán, vàng, forex) của một hệ thống quản lý giao dịch, trả lời bằng GIỌNG NÓI tiếng Việt.
+Quy tắc bắt buộc:
+- Chỉ trả lời bằng tiếng Việt, văn nói tự nhiên, ngắn gọn (tối đa 3-4 câu), không dùng markdown, không gạch đầu dòng, không ký hiệu đặc biệt, không emoji — vì câu trả lời sẽ được đọc thành giọng nói.
+- Nếu câu hỏi liên quan tới các mục có sẵn trong hệ thống, có thể gợi ý mở mục phù hợp trong danh sách: ${navList}
+- Không cam kết chắc chắn về lợi nhuận hay đưa khuyến nghị mua/bán tuyệt đối; nhắc rủi ro khi phù hợp.
+- Nếu không đủ thông tin để trả lời chính xác, hãy nói thật và hỏi lại người dùng thay vì bịa.`;
+
+  const messages = [];
+  if (historyText) {
+    messages.push({ role: "user", content: `(Bối cảnh hội thoại gần đây, chỉ để tham khảo)\n${historyText}` });
+    messages.push({ role: "assistant", content: "Mình đã nắm bối cảnh, sẽ trả lời câu hỏi tiếp theo." });
+  }
+  messages.push({ role: "user", content: question });
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 400, system: systemPrompt, messages }),
+  });
+  const data = await response.json();
+  const text = (data.content || []).map((b) => b.text || "").join("").trim();
+  return text || "Xin lỗi, hiện mình chưa có câu trả lời phù hợp cho việc này.";
+}
+
 function useHdkSpeech({ lang, onResult, onStateChange }) {
   const recRef = useRef(null);
   const [listening, setListening] = useState(false);
@@ -4901,6 +4933,8 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
   const [lang, setLang] = useState('vi-VN');
   const [uiState, setUiState] = useState('idle');
   const [messages, setMessages] = useState([]);
+  const messagesRef = useRef([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
   const [panel, setPanel] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -4930,8 +4964,14 @@ export default function TradingSystem({ onLogout, userEmail, isAdmin, onOpenAdmi
         return;
       }
     }
-    const reply = "Mình chưa nhận ra lệnh này. Hãy thử nói tên một mục, ví dụ: \"Mở nhật ký giao dịch\" hoặc \"Kế hoạch đầu tư\".";
-    pushMsg('ai', reply); speak(reply);
+    // Không khớp lệnh điều hướng nào — chuyển sang hỏi AI để trả lời tự do bằng giọng nói
+    setUiState('thinking');
+    askHdkAI(text, messagesRef.current)
+      .then((reply) => { pushMsg('ai', reply); speak(reply); })
+      .catch(() => {
+        const reply = "Xin lỗi, mình đang gặp sự cố khi kết nối AI. Bạn thử hỏi lại sau nhé.";
+        pushMsg('ai', reply); speak(reply);
+      });
   }, [navigateTo, pushMsg]);
 
   const { listening, start, stop, speak, supported } = useHdkSpeech({ lang, onResult: executeCommand, onStateChange: setUiState });
